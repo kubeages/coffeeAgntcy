@@ -1,0 +1,177 @@
+name: Integration Tests
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'fruitAGNTCY/fruit_agents/lungo/**'
+      - 'fruitAGNTCY/fruit_agents/recruiter/**'
+      - '!fruitAGNTCY/fruit_agents/*/deployment/helm/**'
+  pull_request:
+    paths:
+      - 'fruitAGNTCY/fruit_agents/lungo/**'
+      - 'fruitAGNTCY/fruit_agents/recruiter/**'
+      - '!fruitAGNTCY/fruit_agents/*/deployment/helm/**'
+      - '.github/workflows/test.yaml'
+      - '.github/workflows/test-reusable.yaml'
+      - '.github/actions/check-paths-have-changes/**'
+  workflow_call:
+    inputs:
+      pip_overrides:
+        description: 'One-per-line PEP 508 specs to force (shared across demos; applied only if declared).'
+        required: false
+        type: string
+        default: ""
+      pip_constraints:
+        description: 'One-per-line constraints (shared across demos; applied only if declared).'
+        required: false
+        type: string
+        default: ""
+      docker_overrides:
+        description: 'One-per-line service=image[:tag] (shared across demos; applied only if declared).'
+        required: false
+        type: string
+        default: ""
+      test_lungo:
+        description: 'Whether to test the Lungo project.'
+        required: false
+        type: boolean
+        default: true
+      test_recruiter:
+        description: 'Whether to test the Recruiter project.'
+        required: false
+        type: boolean
+        default: true
+  workflow_dispatch:
+    inputs:
+      pip_overrides:
+        description: 'One-per-line PEP 508 specs to force (shared across demos; applied only if declared).'
+        required: false
+        type: string
+        default: ""
+      pip_constraints:
+        description: 'One-per-line constraints (shared across demos; applied only if declared).'
+        required: false
+        type: string
+        default: ""
+      docker_overrides:
+        description: 'One-per-line service=image[:tag] (shared across demos; applied only if declared).'
+        required: false
+        type: string
+        default: ""
+      test_lungo:
+        description: 'Whether to test the Lungo project.'
+        required: false
+        type: boolean
+        default: true
+      test_recruiter:
+        description: 'Whether to test the Recruiter project.'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  LUNGO_DIR: fruitAGNTCY/fruit_agents/lungo
+  RECRUITER_DIR: fruitAGNTCY/fruit_agents/recruiter
+
+jobs:
+  subprojects-to-test:
+    runs-on: ubuntu-latest
+    outputs:
+      test_lungo: ${{ steps.choose-subprojects.outputs.test_lungo }}
+      test_recruiter: ${{ steps.choose-subprojects.outputs.test_recruiter }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      WORKFLOW_FILES_LIST_JSON: '[".github/workflows/test.yaml", ".github/workflows/test-reusable.yaml", ".github/actions/check-paths-have-changes"]'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Log event info
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "ref_name=${{ github.ref_name }}"
+
+      - name: Log call or dispatch inputs
+        if: ${{ github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo "pip_overrides=${{ inputs.pip_overrides }}"
+          echo "pip_constraints=${{ inputs.pip_constraints }}"
+          echo "docker_overrides=${{ inputs.docker_overrides }}"
+          echo "test_lungo=${{ inputs.test_lungo }}"
+          echo "test_recruiter=${{ inputs.test_recruiter }}"
+
+      - name: Prepare subproject paths JSON lists
+        if: ${{ github.event_name == 'pull_request' }}
+        id: prepare-path-lists
+        run: |
+          paths_json_lungo=$(echo $WORKFLOW_FILES_LIST_JSON | jq -c -r --arg new_val "$LUNGO_DIR" '[$new_val] + .')
+          echo "paths_json_lungo=$paths_json_lungo" | tee -a $GITHUB_OUTPUT
+
+          paths_json_recruiter=$(echo $WORKFLOW_FILES_LIST_JSON | jq -c -r --arg new_val "$RECRUITER_DIR" '[$new_val] + .')
+          echo "paths_json_recruiter=$paths_json_recruiter" | tee -a $GITHUB_OUTPUT
+
+      - name: Check paths have changes for Lungo
+        if: ${{ github.event_name == 'pull_request' }}
+        id: check-paths-lungo
+        uses: ./.github/actions/check-paths-have-changes
+        with:
+          base_sha: ${{ github.event.pull_request.base.sha }}
+          head_sha: ${{ github.event.pull_request.head.sha }}
+          paths_json_list: ${{ steps.prepare-path-lists.outputs.paths_json_lungo }}
+
+      - name: Check paths have changes for Recruiter
+        if: ${{ github.event_name == 'pull_request' }}
+        id: check-paths-recruiter
+        uses: ./.github/actions/check-paths-have-changes
+        with:
+          base_sha: ${{ github.event.pull_request.base.sha }}
+          head_sha: ${{ github.event.pull_request.head.sha }}
+          paths_json_list: ${{ steps.prepare-path-lists.outputs.paths_json_recruiter }}
+
+      - name: Determine test choices for subprojects
+        id: choose-subprojects
+        run: |
+          test_lungo=false
+          test_recruiter=false
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            test_lungo=true
+            test_recruiter=true
+          elif [[ "${{ github.event_name }}" == "workflow_call" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            test_lungo=${{ inputs.test_lungo }}
+            test_recruiter=${{ inputs.test_recruiter }}
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            test_lungo=${{ steps.check-paths-lungo.outputs.changed }}
+            test_recruiter=${{ steps.check-paths-recruiter.outputs.changed }}
+          fi
+
+          echo "test_lungo=$test_lungo" | tee -a $GITHUB_OUTPUT
+          echo "test_recruiter=$test_recruiter" | tee -a $GITHUB_OUTPUT
+
+  integration-tests-lungo:
+    needs: subprojects-to-test
+    if: ${{ needs.subprojects-to-test.outputs.test_lungo == 'true' }}
+    uses: ./.github/workflows/test-reusable.yaml
+    with:
+      project_dir: fruitAGNTCY/fruit_agents/lungo # cannot access env context here
+      pip_overrides: ${{ inputs.pip_overrides }}
+      pip_constraints: ${{ inputs.pip_constraints }}
+      docker_overrides: ${{ inputs.docker_overrides }}
+    secrets: inherit
+
+  integration-tests-recruiter:
+    needs: subprojects-to-test
+    if: ${{ needs.subprojects-to-test.outputs.test_recruiter == 'true' }}
+    uses: ./.github/workflows/test-reusable.yaml
+    with:
+      project_dir: fruitAGNTCY/fruit_agents/recruiter # cannot access env context here
+      pip_overrides: ${{ inputs.pip_overrides }}
+      pip_constraints: ${{ inputs.pip_constraints }}
+      docker_overrides: ${{ inputs.docker_overrides }}
+    secrets: inherit

@@ -1,0 +1,302 @@
+# Copyright AGNTCY Contributors (https://github.com/agntcy)
+# SPDX-License-Identifier: Apache-2.0
+
+import sys
+
+# When this file is invoked as a script (CMD: "python agents/.../main.py"),
+# Python prepends the script's directory to sys.path. That puts the local
+# ``api.py`` (a sibling module) ahead of the project's top-level ``api/``
+# package, so ``from api.admin.router import ...`` resolves to the wrong
+# module. Force ``/app`` to the front before any imports so the package wins.
+if "/app" not in sys.path[:1]:
+    sys.path.insert(0, "/app")
+
+import config.logging_config  # noqa: F401 - runs setup on import; must be first
+
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import uvicorn
+from fastapi.responses import StreamingResponse, JSONResponse
+import json
+from agntcy_app_sdk.factory import AgntcyFactory
+from ioa_observe.sdk.tracing import session_start
+
+from common.cors import get_cors_allowed_origins
+
+from agents.supervisors.auction.graph import shared
+from agents.supervisors.auction.api import create_apps_router
+from api.admin.router import create_admin_router
+from config.config import DEFAULT_MESSAGE_TRANSPORT, LLM_MODEL, HOT_RELOAD_MODE, OTEL_SDK_DISABLED
+from pathlib import Path
+from common.streaming_capability import require_streaming_capability
+from common.version import get_version_info
+
+logger = logging.getLogger("lungo.supervisor.main")
+
+load_dotenv()
+
+# Initialize the shared agntcy factory (tracing from OTEL_SDK_DISABLED)
+shared.set_factory(AgntcyFactory("lungo.auction_supervisor", enable_tracing=not OTEL_SDK_DISABLED))
+require_streaming_capability("auction_supervisor", LLM_MODEL)
+
+
+def _build_graph_sync():
+    from agents.supervisors.auction.graph.graph import ExchangeGraph
+    return ExchangeGraph()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async def init_graph():
+        try:
+            graph = await asyncio.to_thread(_build_graph_sync)
+            app.state.exchange_graph = graph
+            logger.info("Auction exchange graph initialized")
+        except Exception as e:
+            logger.exception("Background graph init failed: %s", e)
+
+    init_task = asyncio.create_task(init_graph())
+    try:
+        yield
+    finally:
+        init_task.cancel()
+        try:
+            await init_task
+        except asyncio.CancelledError:
+            pass
+
+
+app = FastAPI(lifespan=lifespan)
+_cors_origins = get_cors_allowed_origins()
+logger.info("CORS allow_origins: %s", _cors_origins)
+app.add_middleware(
+  CORSMiddleware,
+  allow_origins=_cors_origins,
+  allow_credentials=True,
+  allow_methods=["*"],
+  allow_headers=["*"],
+)
+
+async def _rebuild_exchange_graph() -> None:
+    """Rebuild the ExchangeGraph after the active LLM config changes so the
+    next prompt picks up the new model/key."""
+    graph = await asyncio.to_thread(_build_graph_sync)
+    app.state.exchange_graph = graph
+    logger.info("Auction exchange graph rebuilt for active LLM config")
+
+
+app.include_router(create_apps_router())
+app.include_router(
+    create_admin_router(
+        rebuild_hook=_rebuild_exchange_graph,
+        component_name="auction-supervisor",
+    )
+)
+
+class PromptRequest(BaseModel):
+  prompt: str
+
+@app.get("/.well-known/agent.json")
+async def get_capabilities():
+  """
+  Returns the capabilities of the auction supervisor.
+
+  Returns:
+      dict: A dictionary containing the capabilities and metadata of the auction supervisor.
+  """
+  return {
+    "capabilities": {"streaming": True},
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"],
+    "description": "An AI agent that supervises auctions and manages fruit farm operations.",
+    "name": "Auction Supervisor",
+    "preferredTransport": "JSONRPC",
+    "protocolVersion": "0.3.0",
+    "skills": [
+      {
+        "description": "Supervises auctions and manages fruit farm operations.",
+        "examples": [
+          "What is the yield of the Vietnam fruit farm?",
+          "How much fruit does the Vietnam farm produce?",
+          "What is the yield of the Vietnam fruit farm in pounds?",
+          "How many pounds of fruit does the Vietnam farm produce?",
+        ],
+        "id": "get_yield",
+        "name": "Get Fruit Yield",
+        "tags": ["fruit", "farm", "auction"],
+      }
+    ],
+    "supportsAuthenticatedExtendedCard": False,
+    "url": "",
+    "version": "1.0.0",
+  }
+
+@app.post("/agent/prompt")
+async def handle_prompt(request: PromptRequest, req: Request):
+  """
+  Processes a user prompt by routing it through the ExchangeGraph.
+  
+  This endpoint uses the non-streaming serve() method, which waits for the entire
+  graph execution to complete before returning the final response.
+
+  Args:
+      request (PromptRequest): Contains the input prompt as a string.
+
+  Returns:
+      dict: A dictionary containing the agent's response.
+
+  Raises:
+      HTTPException: 400 for invalid input, 500 for server-side errors.
+  """
+  exchange_graph = getattr(req.app.state, "exchange_graph", None)
+  if exchange_graph is None:
+    raise HTTPException(status_code=503, detail="Service initializing")
+  try:
+    with session_start() as session_id:
+      # Execute the graph synchronously - blocks until completion
+      result = await exchange_graph.serve(request.prompt)
+      logger.info(f"Final result from LangGraph: {result}")
+      return {"response": result, "session_id": session_id["executionID"]}
+  except ValueError as ve:
+    raise HTTPException(status_code=400, detail=str(ve))
+  except Exception as e:
+    raise HTTPException(status_code=500, detail=f"Operation failed: {str(e)}")
+
+
+@app.post("/agent/prompt/stream")
+async def handle_stream_prompt(request: PromptRequest, req: Request):
+    """
+    Processes a user prompt and streams the response from the ExchangeGraph.
+    
+    This endpoint uses the streaming_serve() method to provide real-time updates
+    as the graph executes, yielding chunks progressively from each node.
+
+    Args:
+        request (PromptRequest): Contains the input prompt as a string.
+
+    Returns:
+        StreamingResponse: JSON stream with node outputs as they complete.
+        Each chunk is formatted as: {"response": "..."}
+
+    Raises:
+        HTTPException: 400 for invalid input, 500 for server-side errors.
+    """
+    exchange_graph = getattr(req.app.state, "exchange_graph", None)
+    if exchange_graph is None:
+        raise HTTPException(status_code=503, detail="Service initializing")
+    try:
+        with session_start() as session_id:  # Start a new tracing session for observability
+
+          async def stream_generator():
+              """
+              Generator that yields JSON chunks as they arrive from the graph.
+              Uses newline-delimited JSON (NDJSON) format for streaming.
+              """
+              try:
+                  # Stream chunks from the graph as nodes complete execution
+                  async for chunk in exchange_graph.streaming_serve(request.prompt):
+                      yield json.dumps({"response": chunk, "session_id": session_id["executionID"]}) + "\n"
+              except Exception as e:
+                  logger.error(f"Error in stream: {e}")
+                  yield json.dumps({"response": f"Error: {str(e)}"}) + "\n"
+
+          return StreamingResponse(
+              stream_generator(),
+              media_type="application/x-ndjson",  # Newline-delimited JSON for streaming
+              headers={
+                  "Cache-Control": "no-cache",  # Prevent caching of streaming responses
+                  "Connection": "keep-alive",   # Keep connection open for streaming
+              }
+          )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Operation failed: {str(e)}")
+
+
+@app.get("/ready")
+async def ready(req: Request):
+    """Returns 503 until exchange_graph is initialized, then 200. For test/load balancer readiness."""
+    if getattr(req.app.state, "exchange_graph", None) is None:
+        raise HTTPException(status_code=503, detail="Service initializing")
+    return {"status": "ok"}
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+@app.get("/transport/config")
+async def get_config():
+    """
+    Returns the current transport configuration.
+    
+    Returns:
+        dict: Configuration containing transport settings.
+    """
+    return {
+        "transport": DEFAULT_MESSAGE_TRANSPORT.upper()
+    }
+
+@app.get("/about")
+async def version_info():
+  """Return build info sourced from about.properties."""
+  props_path = Path(__file__).resolve().parents[3] / "about.properties"
+  return get_version_info(props_path)
+
+@app.get("/suggested-prompts")
+async def get_prompts(pattern: str = "default"):
+  """
+  Fetch suggested prompts based on the specified pattern.
+
+  Parameters:
+      pattern (str): The type of prompts to fetch.
+                     Use "default" for all prompts or "streaming" for streaming-specific prompts.
+
+  Returns:
+      dict: A dictionary containing lists of prompts for "buyer" and "purchaser".
+
+  Raises:
+      HTTPException:
+          - 500 if the JSON file is invalid or an unexpected error occurs.
+  """
+  try:
+    prompts_path = Path(__file__).resolve().parent / "suggested_prompts.json"
+    raw = prompts_path.read_text(encoding="utf-8")
+    data = json.loads(raw)
+
+    buyer_prompts = data.get("buyer", [])
+    purchaser_prompts = data.get("purchaser", [])
+    return {"buyer": buyer_prompts, "purchaser": purchaser_prompts}
+
+  except Exception as e:
+    logger.error(f"Unexpected error while reading prompts: {str(e)}")
+    raise HTTPException(status_code=500, detail="An unexpected error occurred while reading prompts.")
+
+
+@app.get("/agents/{slug}/oasf")
+async def get_agent_oasf(slug: str):
+  """
+  Returns the OASF JSON for the specified agent slug from the static files.
+  """
+  oasf_path = Path(__file__).resolve().parent / "oasf" / "agents" / f"{slug}.json"
+  if not oasf_path.exists():
+    raise HTTPException(status_code=404, detail="OASF record not found")
+  try:
+    with oasf_path.open("r", encoding="utf-8") as f:
+      data = json.load(f)
+    return JSONResponse(content=data)
+  except Exception as e:
+    logger.error(f"Failed to read OASF file for slug '{slug}': {e}")
+    raise HTTPException(status_code=500, detail="An unexpected error occurred while retrieving the agent information. Please try again later.")
+
+
+# Run the FastAPI server using uvicorn
+if __name__ == "__main__":
+  uvicorn.run("agents.supervisors.auction.main:app", host="0.0.0.0", port=8000, reload=HOT_RELOAD_MODE)

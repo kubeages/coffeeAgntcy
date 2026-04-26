@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 56" width="320" height="56" role="img" aria-label="Fruit AGNTCY">
+  <defs>
+    <linearGradient id="fruit-flesh" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFC07A"/>
+      <stop offset="1" stop-color="#FF9A52"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(4 4)">
+    <ellipse cx="22" cy="26" rx="20" ry="22" fill="url(#fruit-flesh)" stroke="#13693c" stroke-width="0"/>
+    <path d="M22 6 Q 30 -2 41 0 Q 38 8 28 14 Z" fill="#4cbb6c"/>
+    <ellipse cx="14" cy="20" rx="5" ry="7" fill="#fff" opacity="0.18"/>
+  </g>
+  <g font-family="'Merriweather', 'Georgia', serif">
+    <text x="60" y="34" font-size="24" font-weight="900" fill="#232323" letter-spacing="-0.5">Fruit</text>
+    <text x="124" y="34" font-size="16" font-weight="700" fill="#4cbb6c" letter-spacing="3">AGNTCY</text>
+  </g>
+</svg>

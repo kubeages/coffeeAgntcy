@@ -1,0 +1,153 @@
+name: Helm Push Charts
+
+on:
+  push:
+    tags: ["*"]
+    branches:
+      - main
+    paths:
+      - 'fruitAGNTCY/fruit_agents/*/deployment/helm/**'
+  pull_request:
+    paths:
+      - 'fruitAGNTCY/fruit_agents/*/deployment/helm/**'
+      - '.github/workflows/helm-push.yaml'
+      - '.github/workflows/helm-package-reusable.yaml'
+      - '.github/actions/check-paths-have-changes/**'
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Whether to push the charts to the registry.'
+        required: false
+        type: boolean
+        default: false
+      build_lungo:
+        description: 'Whether to build the lungo chart.'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  LUNGO_DIR: fruitAGNTCY/fruit_agents/lungo
+  HELM_SUBDIR: deployment/helm
+
+jobs:
+  subprojects-to-build:
+    runs-on: ubuntu-latest
+    outputs:
+      build_lungo: ${{ steps.choose-subprojects.outputs.build_lungo }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      WORKFLOW_FILES_LIST_JSON: '[".github/workflows/helm-push.yaml", ".github/workflows/helm-package-reusable.yaml", ".github/actions/check-paths-have-changes"]'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Log event info
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "ref_name=${{ github.ref_name }}"
+
+      - name: Log dispatch inputs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo "push=${{ inputs.push }}"
+          echo "build_lungo=${{ inputs.build_lungo }}"
+
+      - name: Prepare subproject paths JSON lists
+        if: ${{ github.event_name == 'pull_request' }}
+        id: prepare-path-lists
+        run: |
+          paths_json_lungo=$(echo $WORKFLOW_FILES_LIST_JSON | jq -c -r --arg new_val "$LUNGO_DIR/$HELM_SUBDIR" '[$new_val] + .')
+          echo "paths_json_lungo=$paths_json_lungo" | tee -a $GITHUB_OUTPUT
+
+      - name: Check paths have changes for Lungo
+        if: ${{ github.event_name == 'pull_request' }}
+        id: check-paths-lungo
+        uses: ./.github/actions/check-paths-have-changes
+        with:
+          base_sha: ${{ github.event.pull_request.base.sha }}
+          head_sha: ${{ github.event.pull_request.head.sha }}
+          paths_json_list: ${{ steps.prepare-path-lists.outputs.paths_json_lungo }}
+
+      - name: Determine build choices for subprojects
+        id: choose-subprojects
+        run: |
+          build_lungo=false
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            build_lungo=true
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            build_lungo=${{ inputs.build_lungo }}
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            build_lungo=${{ steps.check-paths-lungo.outputs.changed }}
+          fi
+
+          echo "build_lungo=$build_lungo" | tee -a $GITHUB_OUTPUT
+
+  helm-package-lungo:
+    needs: subprojects-to-build
+    if: ${{ needs.subprojects-to-build.outputs.build_lungo == 'true' }}
+
+    strategy:
+      matrix:
+        chart:
+          - name: lungo-ui
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/ui
+            package_name: lungo-ui
+          - name: auction-supervisor
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/auction-supervisor
+            package_name: auction-supervisor
+          - name: agentic-workflows-api
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/agentic-workflows-api
+            package_name: agentic-workflows-api
+          - name: brazil-farm
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/brazil-farm
+            package_name: brazil-farm
+          - name: colombia-farm
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/colombia-farm
+            package_name: colombia-farm
+          - name: vietnam-farm
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/vietnam-farm
+            package_name: vietnam-farm
+          - name: weather-mcp-server
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/weather-mcp-server
+            package_name: weather-mcp-server
+          - name: payment-mcp-server
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/payment-mcp-server
+            package_name: payment-mcp-server
+          - name: logistics-supervisor
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/logistics-supervisor
+            package_name: logistics-supervisor
+          - name: logistics-shipper
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/logistics-shipper
+            package_name: logistics-shipper
+          - name: logistics-accountant
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/logistics-accountant
+            package_name: logistics-accountant
+          - name: logistics-farm
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/logistics-farm
+            package_name: logistics-farm
+          - name: logistics-helpdesk
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/logistics-helpdesk
+            package_name: logistics-helpdesk
+          - name: recruiter
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/recruiter
+            package_name: recruiter
+          - name: recruiter-supervisor
+            path: fruitAGNTCY/fruit_agents/lungo/deployment/helm/recruiter-supervisor
+            package_name: recruiter-supervisor
+
+    permissions: # permissions can only be maintained or reduced (not elevated) throughout a chain of workflows
+      packages: write
+      contents: read
+
+    uses: ./.github/workflows/helm-package-reusable.yaml
+    with:
+      path: ${{ matrix.chart.path }}
+      package_name: ${{ matrix.chart.package_name }}
+      push: ${{ github.event_name == 'push' || ( github.event_name == 'workflow_dispatch' && inputs.push )}}

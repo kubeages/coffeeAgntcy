@@ -1,0 +1,86 @@
+opentelemetry-collector:
+  image:
+    repository: otel/opentelemetry-collector-k8s
+  mode: deployment
+
+clickhouse:
+  auth:
+    username: "admin"
+    password: "admin"
+  keeper:
+    enabled: false
+  shards: 1
+  replicaCount: 1
+  image:
+    repository: bitnamilegacy/clickhouse
+    tag: 25.6.4-debian-12-r0
+    pullPolicy: IfNotPresent
+
+nats:
+  readinessProbe:
+    httpGet: { path: /healthz, port: 8222 }
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 6
+  livenessProbe:
+    httpGet: { path: /healthz, port: 8222 }
+    initialDelaySeconds: 20
+    periodSeconds: 20
+    timeoutSeconds: 2
+    failureThreshold: 6
+
+weather-mcp-server:
+  transportServerEndpoint: "nats://lungo-local-cluster-nats:4222"
+  defaultMessageTransport: "NATS"
+  slimServer: "lungo-local-cluster-slim:46357"
+  natsServer: "lungo-local-cluster-nats:4222"
+  # Set via CI/helmfile or leave empty if using image default from config.config for dev only.
+  slimSharedSecret: ""
+  otlpHttpEndpoint: "http://lungo-local-cluster-opentelemetry-collector:4318"
+
+agentic-workflows-api:
+  environment: local
+  config:
+    corsAllowedOrigins: "http://localhost:3000,http://127.0.0.1:3000"
+
+auction-supervisor:
+  config:
+    corsAllowedOrigins: "http://localhost:3000,http://127.0.0.1:3000"
+
+logistics-accountant:
+  config:
+    corsAllowedOrigins: "http://localhost:3000,http://127.0.0.1:3000"
+
+logistics-farm:
+  config:
+    corsAllowedOrigins: "http://localhost:3000,http://127.0.0.1:3000"
+
+logistics-helpdesk:
+  config:
+    corsAllowedOrigins: "http://localhost:3000,http://127.0.0.1:3000"
+
+logistics-shipper:
+  config:
+    corsAllowedOrigins: "http://localhost:3000,http://127.0.0.1:3000"
+
+logistics-supervisor:
+  config:
+    corsAllowedOrigins: "http://localhost:3000,http://127.0.0.1:3000"
+
+recruiter-supervisor:
+  config:
+    corsAllowedOrigins: "http://localhost:3000,http://127.0.0.1:3000"
+
+lungo-ui:
+  environment: local
+  config:
+    exchangeAppApiUrl: "http://localhost:30080"
+    logisticsAppApiUrl: "http://localhost:30081"
+    discoveryAppApiUrl: "http://localhost:30082"
+    agenticWorkflowsApiUrl: "http://localhost:30083"
+
+# Populated by helmfile / config-overrides.yaml.gotmpl for local dev; defaults avoid nil when templating alone.
+localExternalSecret:
+  azureApiKey: ""
+  slimSharedSecret: "dummy_password"

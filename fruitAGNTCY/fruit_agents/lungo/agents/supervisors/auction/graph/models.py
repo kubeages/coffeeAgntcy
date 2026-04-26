@@ -1,0 +1,34 @@
+# Copyright AGNTCY Contributors (https://github.com/agntcy)
+# SPDX-License-Identifier: Apache-2.0
+
+from typing import Literal
+from pydantic import BaseModel, Field
+from agents.supervisors.auction.graph.shared import farm_registry
+
+FarmLiteral = Literal[tuple(farm_registry.slugs())]
+
+class InventoryArgs(BaseModel):
+    """Arguments for the create_order tool."""
+    prompt: str = Field(
+        ...,
+        description="The prompt to use for the broadcast. Must be a non-empty string."
+    )
+    farm : FarmLiteral = Field(
+        ...,
+        description="The name of the farm. Must be one of 'brazil', 'colombia', or 'vietnam'."
+    )
+
+class CreateOrderArgs(BaseModel):
+    """Arguments for the create_order tool."""
+    farm: FarmLiteral = Field(
+        ...,
+        description="The name of the farm. Must be one of 'brazil', 'colombia', or 'vietnam'."
+    )
+    quantity: int = Field(
+        ...,
+        description="The quantity of the order. Must be a positive integer."
+    )
+    price: float = Field(
+        ...,
+        description="The price of the order. Must be a positive float."
+    )

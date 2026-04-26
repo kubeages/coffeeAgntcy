@@ -1,0 +1,591 @@
+services:
+  brazil-farm-server:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.brazil-farm
+    image: ghcr.io/kubeages/fruit-agntcy/brazil-farm:latest
+    container_name: brazil-farm-server
+    env_file:
+      - .env
+    environment:
+      - TZ=UTC
+      - FARM_AGENT_HOST=brazil-farm-server
+      - FARM_AGENT_PORT=9999
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - IDENTITY_AUTH_ENABLED=disabled
+      - ENABLE_HTTP=true
+    ports:
+      - "9999:9999"
+    depends_on:
+      nats:
+        condition: service_started
+    profiles:
+      - farms
+  colombia-farm-server:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.colombia-farm
+    image: ghcr.io/kubeages/fruit-agntcy/colombia-farm:latest
+    container_name: colombia-farm-server
+    env_file:
+      - .env
+    environment:
+      - TZ=UTC
+      - FARM_AGENT_HOST=colombia-farm-server
+      - FARM_AGENT_PORT=9998
+      - DEFAULT_MESSAGE_TRANSPORT=${DEFAULT_MESSAGE_TRANSPORT}
+      - TRANSPORT_SERVER_ENDPOINT=${TRANSPORT_SERVER_ENDPOINT:-http://slim:46357}
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - ENABLE_HTTP=true
+      - IDENTITY_AUTH_ENABLED=${IDENTITY_AUTH_ENABLED:-} # Disabled by default
+      - IDENTITY_SERVICE_API_KEY=${IDENTITY_SERVICE_API_KEY_COLOMBIA_FARM:-dummy_api_key}
+      - MCP_PAYMENT_SERVICE_URL=${MCP_PAYMENT_SERVICE_URL:-http://payment-mcp-server:8081/mcp}
+    ports:
+      - "9998:9998"
+    depends_on:
+      nats:
+        condition: service_started
+    profiles:
+      - farms
+  vietnam-farm-server:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.vietnam-farm
+    image: ghcr.io/kubeages/fruit-agntcy/vietnam-farm:latest
+    container_name: vietnam-farm-server
+    env_file:
+      - .env
+    environment:
+      - TZ=UTC
+      - FARM_AGENT_HOST=vietnam-farm-server
+      - FARM_AGENT_PORT=9997
+      - DEFAULT_MESSAGE_TRANSPORT=${DEFAULT_MESSAGE_TRANSPORT}
+      - TRANSPORT_SERVER_ENDPOINT=${TRANSPORT_SERVER_ENDPOINT:-http://slim:46357}
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - ENABLE_HTTP=true
+      - IDENTITY_AUTH_ENABLED=${IDENTITY_AUTH_ENABLED:-} # Disabled by default
+      - IDENTITY_SERVICE_API_KEY=${IDENTITY_SERVICE_API_KEY_VIETNAM_FARM:-dummy_api_key}
+      - MCP_PAYMENT_SERVICE_URL=${MCP_PAYMENT_SERVICE_URL:-http://payment-mcp-server:8081/mcp}
+    ports:
+      - "9997:9997"
+    depends_on:
+      nats:
+        condition: service_started
+    profiles:
+      - farms
+  nats:
+    image: nats:latest
+    container_name: lungo-nats
+    ports:
+      - "4222:4222"
+      - "4223:4223"
+      - "6222:6222"
+      - "8222:8222"
+    # No healthcheck: standard nats image has no healthcheck unless Alpine variant is used.
+    # Dependents use condition: service_started.
+
+  slim:
+    image: ghcr.io/agntcy/slim:1.0.0
+    container_name: lungo-slim
+    ports:
+      - "46357:46357"
+    environment:
+      # Must match SLIM_SHARED_SECRET used by Lungo agents (compose defaults chain both from SLIM_GATEWAY_PASSWORD).
+      - PASSWORD=${SLIM_SHARED_SECRET:-${SLIM_GATEWAY_PASSWORD:-dummy_password}}
+      - CONFIG_PATH=/config.yaml
+    volumes:
+      - ./config/docker/slim/server-config.yaml:/config.yaml
+    command: ["/slim", "--config", "/config.yaml"]
+    # No healthcheck: ghcr.io/agntcy/slim image has no nc/bash/wget for a portable TCP check.
+    # Dependents use condition: service_started so they start once this container is running.
+
+  # auction supervisor App (farm client)
+  auction-supervisor:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.auction-supervisor
+    image: ghcr.io/kubeages/fruit-agntcy/auction-supervisor:latest
+    container_name: auction-supervisor
+    volumes:
+      # Mount local git metadata so /build/info can derive latest tag/date in dev
+      - ../../../.git:/app/.git:ro
+    env_file:
+      - .env
+    environment:
+      - TZ=UTC
+      - FARM_AGENT_HOST=farm-server
+      - FARM_AGENT_PORT=9999
+      - DEFAULT_MESSAGE_TRANSPORT=${DEFAULT_MESSAGE_TRANSPORT}
+      - TRANSPORT_SERVER_ENDPOINT=${TRANSPORT_SERVER_ENDPOINT:-http://slim:46357}
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - IDENTITY_AUTH_ENABLED=${IDENTITY_AUTH_ENABLED:-} # Disabled by default
+      - IDENTITY_SERVICE_API_KEY=${IDENTITY_SERVICE_API_KEY_AUCTION_SUPERVISOR:-dummy_api_key}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      nats:
+        condition: service_started
+    profiles:
+      - farms
+
+  # Agentic Workflows HTTP API
+  agentic-workflows-api:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.agentic-workflows-api
+    image: ghcr.io/kubeages/fruit-agntcy/agentic-workflows-api:latest
+    container_name: agentic-workflows-api
+    env_file:
+      - .env
+    environment:
+      - TZ=UTC
+      - PORT=9105
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+    ports:
+      - "9105:9105"
+
+  ui:
+    profiles:
+      - frontend
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.ui
+    image: ghcr.io/kubeages/fruit-agntcy/lungo-ui:latest
+    container_name: lungo-ui
+    env_file:
+      - frontend/.env
+    environment:
+      - TZ=UTC
+    #depends_on:
+    #  - auction-supervisor
+    ports:
+      - "3000:3000"
+
+  weather-mcp-server:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.weather-mcp
+    image: ghcr.io/kubeages/fruit-agntcy/weather-mcp-server:latest
+    container_name: weather-mcp-server
+    environment:
+      - TZ=UTC
+      - DEFAULT_MESSAGE_TRANSPORT=${DEFAULT_MESSAGE_TRANSPORT}
+      - TRANSPORT_SERVER_ENDPOINT=${TRANSPORT_SERVER_ENDPOINT:-http://slim:46357}
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_SDK_DISABLED=${OTEL_SDK_DISABLED:-false}
+    depends_on:
+      nats:
+        condition: service_started
+    profiles:
+      - farms
+
+  payment-mcp-server:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.payment-mcp
+    image: ghcr.io/kubeages/fruit-agntcy/payment-mcp-server:latest
+    container_name: payment-mcp-server
+    ports:
+      - "8081:8081"
+    environment:
+      - TZ=UTC
+      - DEFAULT_MESSAGE_TRANSPORT=${DEFAULT_MESSAGE_TRANSPORT}
+      - TRANSPORT_SERVER_ENDPOINT=${TRANSPORT_SERVER_ENDPOINT:-http://slim:46357}
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_SDK_DISABLED=${OTEL_SDK_DISABLED:-false}
+      - IDENTITY_AUTH_ENABLED=${IDENTITY_AUTH_ENABLED:-} # Disabled by default
+      - IDENTITY_SERVICE_API_KEY=${IDENTITY_SERVICE_API_KEY_PAYMENT_MCP:-dummy_api_key}
+    depends_on:
+      nats:
+        condition: service_started
+    profiles:
+      - farms
+
+  clickhouse-server:
+    image: clickhouse/clickhouse-server
+    container_name: lungo-clickhouse-server
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    environment:
+      CLICKHOUSE_USER: admin
+      CLICKHOUSE_PASSWORD: admin
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8123/ping",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    profiles:
+      - observability
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: lungo-otel-collector
+    restart: unless-stopped
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./config/docker/otel/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config", "/etc/otel-collector-config.yaml"]
+    depends_on:
+      clickhouse-server:
+        condition: service_healthy
+    profiles:
+      - observability
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana-lungo
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+    volumes:
+      - ./config/docker/grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml
+      - ./config/docker/grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml
+      - ./config/docker/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      clickhouse-server:
+        condition: service_healthy
+    profiles:
+      - observability
+
+  logistics-shipper:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-shipper
+    image: ghcr.io/kubeages/fruit-agntcy/logistics-shipper:latest
+    container_name: logistics-shipper
+    environment:
+      - TZ=UTC
+      - DEFAULT_MESSAGE_TRANSPORT=SLIM # Do not change. SLIM is required for group conversation.
+      - TRANSPORT_SERVER_ENDPOINT=http://slim:46357
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_SDK_DISABLED=${OTEL_SDK_DISABLED:-false}
+      - ENABLE_HTTP=true
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+    ports:
+      - "9091:9091"
+    depends_on:
+      slim:
+        condition: service_started
+    profiles:
+      - logistics
+
+  logistics-accountant:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-accountant
+    image: ghcr.io/kubeages/fruit-agntcy/logistics-accountant:latest
+    container_name: logistics-accountant
+    environment:
+      - TZ=UTC
+      - DEFAULT_MESSAGE_TRANSPORT=SLIM # Do not change. SLIM is required for group conversation.
+      - TRANSPORT_SERVER_ENDPOINT=http://slim:46357
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_SDK_DISABLED=${OTEL_SDK_DISABLED:-false}
+      - ENABLE_HTTP=true
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+    ports:
+      - "9092:9092"
+    depends_on:
+      slim:
+        condition: service_started
+    profiles:
+      - logistics
+
+  logistics-farm:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-farm
+    image: ghcr.io/kubeages/fruit-agntcy/logistics-farm:latest
+    container_name: logistics-farm
+    environment:
+      - TZ=UTC
+      - DEFAULT_MESSAGE_TRANSPORT=SLIM # Do not change. SLIM is required for group conversation.
+      - TRANSPORT_SERVER_ENDPOINT=http://slim:46357
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_SDK_DISABLED=${OTEL_SDK_DISABLED:-false}
+      - ENABLE_HTTP=true
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+    ports:
+      - "9093:9093"
+    depends_on:
+      slim:
+        condition: service_started
+    profiles:
+      - logistics
+
+  logistics-helpdesk:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-helpdesk
+    image: ghcr.io/kubeages/fruit-agntcy/logistics-helpdesk:latest
+    container_name: logistics-helpdesk
+    environment:
+      - TZ=UTC
+      - DEFAULT_MESSAGE_TRANSPORT=SLIM # Do not change. SLIM is required for group conversation.
+      - TRANSPORT_SERVER_ENDPOINT=http://slim:46357
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - OTEL_SDK_DISABLED=${OTEL_SDK_DISABLED:-false}
+      - ENABLE_HTTP=true
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+    ports:
+      - "9094:9094"
+    depends_on:
+      slim:
+        condition: service_started
+    profiles:
+      - logistics
+
+  logistics-supervisor:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-supervisor
+    image: ghcr.io/kubeages/fruit-agntcy/logistics-supervisor:latest
+    container_name: logistics-supervisor
+    env_file:
+      - .env
+    environment:
+      - TZ=UTC
+      - DEFAULT_MESSAGE_TRANSPORT=SLIM # Do not change. SLIM is required for group conversation.
+      - TRANSPORT_SERVER_ENDPOINT=http://slim:46357
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+    ports:
+      - "9090:9090"
+    depends_on:
+      slim:
+        condition: service_started
+    profiles:
+      - logistics
+
+  mce-api-layer:
+    image: ghcr.io/agntcy/obs-api:0.1.1
+    container_name: lungo-mce-api-layer
+    ports:
+      - "8080:8080"
+    environment:
+      - CLICKHOUSE_URL=clickhouse-server
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_USER=admin
+      - CLICKHOUSE_PASS=admin
+      - CLICKHOUSE_DB=default
+      - SERVER_PORT=8080
+      - PORT=8080
+    depends_on:
+      clickhouse-server:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/keepAlive"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    profiles:
+      - observability
+
+  metrics-computation-engine:
+    image: ghcr.io/agntcy/mce:1.2.1
+    container_name: lungo-metrics-computation-engine
+    ports:
+      - "8001:8000"
+    environment:
+      - API_BASE_URL=http://mce-api-layer:8080
+      - LLM_BASE_MODEL_URL=${AZURE_API_BASE:-${OPENAI_ENDPOINT}}
+      - LLM_MODEL_NAME=${AZURE_API_VERSION:-${OPENAI_MODEL_NAME}}
+      - LLM_API_KEY=${AZURE_API_KEY:-${OPENAI_API_KEY}}
+    depends_on:
+      mce-api-layer:
+        condition: service_healthy
+    profiles:
+      - observability
+
+  dir-api-server:
+    image: ghcr.io/agntcy/dir-apiserver:v1.0.0
+    container_name: dir-api-server
+    env_file:
+      - ./config/docker/dir/apiserver.env
+    ports:
+      - 8888:8888
+    depends_on:
+      postgres:
+        condition: service_healthy
+      zot:
+        condition: service_started
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    # # No healthcheck: production image is distroless and does not have wget/curl/nc or shells. Also, the endpoint at 8888 is only gRPC, not HTTP.
+    # # Future healthcheck will be available via grpc-health-probe on 8888 when dir v1.1.0 is integrated. Fix was merged in https://github.com/agntcy/dir/pull/1017.
+    # healthcheck:
+    #   test: wget --no-verbose --tries=1 --spider http://127.0.0.1:8888/healthz/ready || exit 1
+    #   interval: 10s
+    #   retries: 60
+    #   start_period: 10s
+    # Until then dependents should use condition: service_started so they start once this container is running.
+    profiles:
+      - recruiter
+
+  dir-mcp-server:
+    image: ghcr.io/agntcy/dir-ctl:v1.0.0
+    container_name: dir-mcp-server
+    stdin_open: true
+    tty: true
+    command: ["mcp", "serve"]
+    environment:
+      OASF_API_VALIDATION_SCHEMA_URL: https://schema.oasf.outshift.com
+      DIRECTORY_CLIENT_SERVER_ADDRESS: dir-api-server:8888
+      DIRECTORY_CLIENT_TLS_SKIP_VERIFY: "true"
+    depends_on:
+      dir-api-server:
+        condition: service_started
+    profiles:
+      - recruiter
+
+  postgres:
+    image: docker.io/library/postgres:16.6-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: directory
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d directory"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    profiles:
+      - recruiter
+
+  zot:
+    image: ghcr.io/project-zot/zot:v2.1.15
+    ports:
+      - 5555:5000
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    # No healthcheck: image may have neither curl nor wget (e.g. distroless).
+    # Dependents use condition: service_started so they start once this container is running.
+    profiles:
+      - recruiter
+
+  recruiter:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/recruiter/Dockerfile
+    image: ghcr.io/kubeages/fruit-agntcy/recruiter:latest
+    container_name: recruiter
+    env_file:
+      - .env
+    depends_on:
+      dir-api-server:
+        condition: service_started
+    environment:
+      - TZ=UTC
+      - DEFAULT_MESSAGE_TRANSPORT=${DEFAULT_MESSAGE_TRANSPORT}
+      - TRANSPORT_SERVER_ENDPOINT=${TRANSPORT_SERVER_ENDPOINT:-http://slim:46357}
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - ENABLE_HTTP=true
+      - MCP_CONNECTION_MODE=binary
+      - DIRECTORY_CLIENT_SERVER_ADDRESS=dir-api-server:8888
+      - DIRECTORY_CLIENT_TLS_SKIP_VERIFY=true
+      - OASF_API_VALIDATION_SCHEMA_URL=https://schema.oasf.outshift.com
+    ports:
+      - "8881:8881"
+    profiles:
+      - recruiter
+
+  recruiter-supervisor:
+    build:
+      context: ../../..
+      dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.recruiter-supervisor
+    image: ghcr.io/kubeages/fruit-agntcy/recruiter-supervisor:latest
+    container_name: recruiter-supervisor
+    volumes:
+      # Mount local git metadata so /build/info can derive latest tag/date in dev
+      - ../../../.git:/app/.git:ro
+    env_file:
+      - .env
+    environment:
+      - TZ=UTC
+      - RECRUITER_AGENT_URL=http://recruiter:8881
+      - DEFAULT_MESSAGE_TRANSPORT=${DEFAULT_MESSAGE_TRANSPORT}
+      - TRANSPORT_SERVER_ENDPOINT=${TRANSPORT_SERVER_ENDPOINT:-http://slim:46357}
+      - SLIM_SERVER=${SLIM_SERVER}
+      - NATS_SERVER=${NATS_SERVER}
+      - SLIM_SHARED_SECRET=${SLIM_SHARED_SECRET}
+      - OTLP_HTTP_ENDPOINT=${OTLP_HTTP_ENDPOINT:-http://otel-collector:4318}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+    ports:
+      - "8882:8882"
+    depends_on:
+      recruiter:
+        condition: service_started
+      nats:
+        condition: service_started
+    profiles:
+      - recruiter

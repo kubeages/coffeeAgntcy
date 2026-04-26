@@ -1,0 +1,244 @@
+name: Build and Push Project Docker Images
+
+on:
+  push:
+    tags: ["*"]
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'fruitAGNTCY/fruit_agents/**'
+      - '!fruitAGNTCY/fruit_agents/*/deployment/helm/**'
+      - '!fruitAGNTCY/fruit_agents/*/tests/**'
+      - '.github/workflows/docker-build-push.yaml'
+      - '.github/workflows/docker-build-reusable.yaml'
+      - '.github/actions/check-paths-have-changes/**'
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Whether to push the container images to the registry.'
+        required: false
+        type: boolean
+        default: false
+      build_lungo:
+        description: 'Whether to build the lungo container images.'
+        required: false
+        type: boolean
+        default: true
+      build_recruiter:
+        description: 'Whether to build the recruiter container images.'
+        required: false
+        type: boolean
+        default: true
+      image_tag:
+        description: 'The tag to use for the container images.'
+        required: false
+        type: string
+        default: ''
+
+env:
+  LUNGO_DIR: fruitAGNTCY/fruit_agents/lungo
+  RECRUITER_DIR: fruitAGNTCY/fruit_agents/recruiter
+
+jobs:
+  subprojects-to-build:
+    runs-on: ubuntu-latest
+    outputs:
+      build_lungo: ${{ steps.choose-subprojects.outputs.build_lungo }}
+      build_recruiter: ${{ steps.choose-subprojects.outputs.build_recruiter }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      WORKFLOW_FILES_LIST_JSON: '[".github/workflows/docker-build-push.yaml", ".github/workflows/docker-build-reusable.yaml", ".github/actions/check-paths-have-changes"]'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Log event info
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "ref_name=${{ github.ref_name }}"
+
+      - name: Log relevant dispatch inputs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo "build_lungo=${{ inputs.build_lungo }}"
+          echo "build_recruiter=${{ inputs.build_recruiter }}"
+
+      - name: Prepare subproject paths JSON lists
+        if: ${{ github.event_name == 'pull_request' }}
+        id: prepare-path-lists
+        run: |
+          paths_json_lungo=$(echo $WORKFLOW_FILES_LIST_JSON | jq -c -r --arg new_val "$LUNGO_DIR" '[$new_val] + .')
+          echo "paths_json_lungo=$paths_json_lungo" | tee -a $GITHUB_OUTPUT
+
+          paths_json_recruiter=$(echo $WORKFLOW_FILES_LIST_JSON | jq -c -r --arg new_val "$RECRUITER_DIR" '[$new_val] + .')
+          echo "paths_json_recruiter=$paths_json_recruiter" | tee -a $GITHUB_OUTPUT
+
+      - name: Check paths have changes for Lungo
+        if: ${{ github.event_name == 'pull_request' }}
+        id: check-paths-lungo
+        uses: ./.github/actions/check-paths-have-changes
+        with:
+          base_sha: ${{ github.event.pull_request.base.sha }}
+          head_sha: ${{ github.event.pull_request.head.sha }}
+          paths_json_list: ${{ steps.prepare-path-lists.outputs.paths_json_lungo }}
+
+      - name: Check paths have changes for Recruiter
+        if: ${{ github.event_name == 'pull_request' }}
+        id: check-paths-recruiter
+        uses: ./.github/actions/check-paths-have-changes
+        with:
+          base_sha: ${{ github.event.pull_request.base.sha }}
+          head_sha: ${{ github.event.pull_request.head.sha }}
+          paths_json_list: ${{ steps.prepare-path-lists.outputs.paths_json_recruiter }}
+
+      - name: Determine build choices for subprojects
+        id: choose-subprojects
+        run: |
+          build_lungo=false
+          build_recruiter=false
+
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            build_lungo=true
+            build_recruiter=true
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            build_lungo=${{ inputs.build_lungo }}
+            build_recruiter=${{ inputs.build_recruiter }}
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            build_lungo=${{ steps.check-paths-lungo.outputs.changed }}
+            build_recruiter=${{ steps.check-paths-recruiter.outputs.changed }}
+          fi
+
+          echo "build_lungo=$build_lungo" | tee -a $GITHUB_OUTPUT
+          echo "build_recruiter=$build_recruiter" | tee -a $GITHUB_OUTPUT
+
+  compute-build-parameters:
+    runs-on: ubuntu-latest
+    outputs:
+      push: ${{ steps.build_params.outputs.push}}
+      image_tag: ${{ steps.build_params.outputs.image_tag }}
+      git_branch: ${{ steps.build_params.outputs.git_branch }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Log event info
+        run: |
+          echo "event_name=${{ github.event_name }}"
+          echo "ref=${{ github.ref }}"
+          echo "ref_name=${{ github.ref_name }}"
+
+      - name: Log relevant dispatch inputs
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          echo "push=${{ inputs.push }}"
+          echo "image_tag=${{ inputs.image_tag }}"
+
+      - name: Compute build parameters
+        id: build_params
+        run: |
+          # default values
+          push=false
+          image_tag=unknown
+          git_branch=${{ github.ref_name }}
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            image_tag=pr-${{ github.event.pull_request.number }}
+            git_branch=${{ github.head_ref }}
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
+            push=true
+            image_tag=latest
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            push=true
+            image_tag=${{ github.ref_name }}
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            push=${{ inputs.push }}
+            if [[ "${{ inputs.image_tag }}" != "" ]]; then
+              image_tag=${{ inputs.image_tag }}
+            else
+              short_sha=${GITHUB_SHA:0:7}
+              image_tag="dispatch_${short_sha}_run-${{ github.run_number }}" # informative default tag (though not unique)
+            fi
+          fi
+
+          echo "push=$push" | tee -a $GITHUB_OUTPUT
+          echo "image_tag=$image_tag" | tee -a $GITHUB_OUTPUT
+          echo "git_branch=$git_branch" | tee -a $GITHUB_OUTPUT
+
+
+  docker-build-lungo:
+    needs: [subprojects-to-build, compute-build-parameters]
+    if: ${{ needs.subprojects-to-build.outputs.build_lungo == 'true' }}
+
+    strategy:
+      matrix:
+        image:
+        - name: lungo-ui
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.ui
+        - name: auction-supervisor
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.auction-supervisor
+        - name: agentic-workflows-api
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.agentic-workflows-api
+        - name: brazil-farm
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.brazil-farm
+        - name: colombia-farm
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.colombia-farm
+        - name: vietnam-farm
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.vietnam-farm
+        - name: weather-mcp-server
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.weather-mcp
+        - name: payment-mcp-server
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.payment-mcp
+        - name: logistics-shipper
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-shipper
+        - name: logistics-accountant
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-accountant
+        - name: logistics-farm
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-farm
+        - name: logistics-supervisor
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-supervisor
+        - name: logistics-helpdesk
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.logistics-helpdesk
+        - name: recruiter-supervisor
+          dockerfile: fruitAGNTCY/fruit_agents/lungo/docker/Dockerfile.recruiter-supervisor
+
+    permissions: # permissions can only be maintained or reduced (not elevated) throughout a chain of workflows
+      packages: write
+      contents: read
+      
+    uses: ./.github/workflows/docker-build-reusable.yaml
+    with:
+      name: ${{ matrix.image.name }}
+      dockerfile: ${{ matrix.image.dockerfile }}
+      push: ${{ needs.compute-build-parameters.outputs.push == 'true' }}
+      platforms: linux/amd64
+      image_tag: ${{ needs.compute-build-parameters.outputs.image_tag }}
+      git_branch: ${{ needs.compute-build-parameters.outputs.git_branch }}
+
+  docker-build-recruiter:
+    needs: [subprojects-to-build, compute-build-parameters]
+    if: ${{ needs.subprojects-to-build.outputs.build_recruiter == 'true' }}
+
+    strategy:
+      matrix:
+        image:
+          - name: recruiter
+            dockerfile: fruitAGNTCY/fruit_agents/recruiter/Dockerfile
+
+    permissions: # permissions can only be maintained or reduced (not elevated) throughout a chain of workflows
+      packages: write
+      contents: read
+
+    uses: ./.github/workflows/docker-build-reusable.yaml
+    with:
+      name: ${{ matrix.image.name }}
+      dockerfile: ${{ matrix.image.dockerfile }}
+      push: ${{ needs.compute-build-parameters.outputs.push == 'true' }}
+      platforms: linux/amd64
+      image_tag: ${{ needs.compute-build-parameters.outputs.image_tag }}
+      git_branch: ${{ needs.compute-build-parameters.outputs.git_branch }}

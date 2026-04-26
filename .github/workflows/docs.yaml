@@ -1,0 +1,45 @@
+name: Deploy docs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'CHANGELOG.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'LICENSE'
+      - 'SECURITY.md'
+      - 'assets/**'
+      - 'docs/**'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Copy top-level docs and assets
+        run: |
+          mkdir -p docs/assets
+          sed 's/docs\///g' README.md > docs/README.md
+          cp CONTRIBUTING.md docs/
+          [ -f CHANGELOG.md ] && cp CHANGELOG.md docs/ || true
+          [ -f CODE_OF_CONDUCT.md ] && cp CODE_OF_CONDUCT.md docs/ || true
+          [ -f LICENSE ] && cp LICENSE docs/ || true
+          [ -f SECURITY.md ] && cp SECURITY.md docs/ || true
+          # Copy images/assets if they exist
+          [ -f assets/fruit_agntcy.png ] && cp assets/fruit_agntcy.png docs/assets/ || true
+
+      - name: Deploy
+        run: |
+          pip install mkdocs-material
+          mkdocs gh-deploy --force

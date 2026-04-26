@@ -1,0 +1,34 @@
+{
+  "buyer": [
+    {
+      "prompt": "What yield do the farms have?",
+      "description": "Broadcast query to all farms requesting current yield data. Aggregates responses from Brazil, Colombia, and Vietnam farms."
+    },
+    {
+      "prompt": "I'd like to buy 200 lbs quantity of fruit and who can fulfill it?",
+      "description": "Broadcast inventory check across all farms to identify which farms have sufficient stock (≥200 lbs) to fulfill the order."
+    },
+    {
+      "prompt": "What is the current inventory for Brazil farm?",
+      "description": "Direct query to Brazil farm for current inventory levels. Standard unicast communication without identity verification."
+    },
+    {
+      "prompt": "What is the current inventory for Colombia farm?",
+      "description": "Direct query to Colombia farm for inventory. Validates agent-level identity policies via TBAC (Token-Based Access Control) before allowing access."
+    },
+    {
+      "prompt": "What is the current inventory for Vietnam farm?",
+      "description": "Direct query to Vietnam farm for current inventory levels. Standard unicast communication without identity verification."
+    }
+  ],
+  "purchaser": [
+    {
+      "prompt": "I'd like to buy 200 lbs quantity of fruit at USD 500 price from Colombia",
+      "description": "Create order with Colombia farm for 200 lbs at $500. Validates tool-level identity policies via TBAC before executing order creation."
+    },
+    {
+      "prompt": "I'd like to buy 100 lbs of fruit at USD 250 price from Brazil",
+      "description": "Create order with Brazil farm for 100 lbs at $250. Demonstrates identity verification failure - Brazil farm lacks verified identity badge and request will be rejected."
+    }
+  ]
+}
