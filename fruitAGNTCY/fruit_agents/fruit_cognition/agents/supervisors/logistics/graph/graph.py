@@ -16,7 +16,80 @@ from agents.supervisors.logistics.graph.tools import (
     create_order,
     create_order_streaming
 )
+from cognition.services.agent_response_extractor import (
+    extract_logistics_text,
+    extraction_enabled,
+)
+from cognition.services.claim_mapper import ClaimMapper
+from cognition.services.cognition_fabric import get_fabric
 from common.llm import get_llm
+
+import re as _re
+
+_ORDER_ID_RE = _re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
+
+_claim_mapper = ClaimMapper()
+
+
+def _record_logistics_claims(
+    intent_id: str | None,
+    *,
+    farm: str,
+    quantity: float,
+    price: float,
+    tool_result: object,
+) -> None:
+    """Best-effort: emit logistics + payment claims from a completed order.
+
+    Uses existing claim types (shipping_cost, delivery_sla, payment_status)
+    per the M4 follow-up decision; no new claim types are introduced for
+    order events yet.
+    """
+    if not intent_id or not extraction_enabled():
+        return
+    try:
+        text = str(tool_result)
+        # Logistics-shaped fields. Always include the synthetic shipping_cost
+        # derived from the structured order params; layer in any eta the
+        # extractor can find in the freeform text.
+        logistics_fields: dict = {
+            "route": farm,
+            "shipping_cost_usd": float(quantity) * float(price),
+        }
+        logistics_fields.update(extract_logistics_text(text))
+
+        logistics_claims = _claim_mapper.map_logistics_response(
+            intent_id=intent_id,
+            agent_id="logistics-shipper",
+            response=logistics_fields,
+        )
+
+        # Payment claim: order_id (UUID from tool_result), status from text.
+        order_id_match = _ORDER_ID_RE.search(text)
+        order_id = order_id_match.group(0) if order_id_match else "unknown"
+        status = "delivered" if "DELIVERED" in text.upper() else "pending"
+        payment_claims = _claim_mapper.map_payment_response(
+            intent_id=intent_id,
+            agent_id="logistics-accountant",
+            response={
+                "status": status,
+                "amount_usd": float(quantity) * float(price),
+                "order_id": order_id,
+                "currency": "USD",
+            },
+        )
+
+        fabric = get_fabric()
+        for c in logistics_claims + payment_claims:
+            fabric.save_claim(c)
+        logger.debug(
+            "recorded %d logistics + %d payment claims for intent=%s",
+            len(logistics_claims), len(payment_claims), intent_id,
+        )
+    except Exception:
+        logger.exception("logistics claim recording failed")
 
 logger = logging.getLogger("fruit_cognition.logistics.supervisor.graph")
 
@@ -132,11 +205,20 @@ class LogisticGraph:
             
             # Call the function directly
             tool_result = await create_order(farm=params.farm, quantity=params.quantity, price=params.price)
-            
+
             # Check for errors in the result
             if "error" in str(tool_result).lower() or "failed" in str(tool_result).lower():
                 error_message = f"I encountered an issue creating the order. Please try again later."
                 return {"messages": [AIMessage(content=error_message)]}
+
+            # Record cognition claims (logistics shipping + payment status).
+            _record_logistics_claims(
+                state.get("intent_id"),
+                farm=params.farm,
+                quantity=params.quantity,
+                price=params.price,
+                tool_result=tool_result,
+            )
 
             # Use LLM to format the response
             format_prompt = PromptTemplate(
@@ -266,7 +348,15 @@ class LogisticGraph:
                 
                 # Yield each response as it arrives for streaming
                 yield {"messages": [AIMessage(content=str(response))]}
-            
+
+            # Record cognition claims once the order completes.
+            if delivered:
+                _record_logistics_claims(
+                    state.get("intent_id"),
+                    farm=farm, quantity=quantity, price=price,
+                    tool_result="\n".join(str(r) for r in all_responses) + "\nDELIVERED",
+                )
+
             # If delivered, generate final formatted message using LLM
             if delivered and all_responses:
                 if not self.orders_llm:
