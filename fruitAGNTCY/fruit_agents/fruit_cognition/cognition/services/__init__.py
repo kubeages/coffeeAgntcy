@@ -2,8 +2,10 @@ from cognition.services.claim_mapper import ClaimMapper
 from cognition.services.cognition_fabric import (
     CognitionFabric,
     InMemoryCognitionFabric,
+    get_active_dsn,
     get_fabric,
     reset_fabric,
+    set_active_dsn,
 )
 from cognition.services.intent_manager import IntentManager
 from cognition.services.sstp_factory import SSTPFactory, envelope_enabled, wrap
@@ -15,7 +17,9 @@ __all__ = [
     "IntentManager",
     "SSTPFactory",
     "envelope_enabled",
+    "get_active_dsn",
     "get_fabric",
     "reset_fabric",
+    "set_active_dsn",
     "wrap",
 ]

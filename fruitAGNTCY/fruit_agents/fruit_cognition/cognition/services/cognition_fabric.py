@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 import threading
 from typing import Protocol
 
@@ -7,8 +9,11 @@ from cognition.schemas.claim import Claim
 from cognition.schemas.intent_contract import IntentContract
 
 
+logger = logging.getLogger("fruit_cognition.cognition.fabric")
+
+
 class CognitionFabric(Protocol):
-    """Storage interface shared by the in-memory and (later) Postgres backends."""
+    """Storage interface shared by the in-memory and Postgres backends."""
 
     def save_intent(self, intent: IntentContract) -> None: ...
     def get_intent(self, intent_id: str) -> IntentContract | None: ...
@@ -18,7 +23,7 @@ class CognitionFabric(Protocol):
 
 
 class InMemoryCognitionFabric:
-    """Process-local cognition store. Lost on restart — see SPEC iter 16 for Postgres."""
+    """Process-local cognition store. Lost on restart."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -46,22 +51,71 @@ class InMemoryCognitionFabric:
             return list(self.claims.get(intent_id, []))
 
 
-_singleton: InMemoryCognitionFabric | None = None
+# ----- backend selection -----
+#
+# The active fabric is chosen at first access:
+#   1. Admin-set runtime DSN (set_active_dsn) wins.
+#   2. Else env COGNITION_PG_DSN.
+#   3. Else InMemoryCognitionFabric.
+#
+# set_active_dsn() and reset_fabric() invalidate the singleton so the next
+# get_fabric() call rebuilds with the current resolution.
+
+_singleton: CognitionFabric | None = None
+_override_dsn: str | None = None
 _singleton_lock = threading.Lock()
 
 
-def get_fabric() -> InMemoryCognitionFabric:
-    """Return the process-wide cognition fabric, creating it on first access."""
+def _resolve_dsn() -> str | None:
+    if _override_dsn:
+        return _override_dsn
+    return os.getenv("COGNITION_PG_DSN") or None
+
+
+def _build_fabric(dsn: str | None) -> CognitionFabric:
+    if not dsn:
+        logger.info("cognition fabric: InMemoryCognitionFabric (no DSN configured)")
+        return InMemoryCognitionFabric()
+    # Lazy import — keeps psycopg out of code paths that never touch Postgres.
+    from cognition.services.pg_cognition_fabric import PgCognitionFabric
+
+    logger.info("cognition fabric: PgCognitionFabric")
+    return PgCognitionFabric(dsn)
+
+
+def get_fabric() -> CognitionFabric:
+    """Return the process-wide cognition fabric, building it on first access."""
     global _singleton
-    if _singleton is None:
-        with _singleton_lock:
-            if _singleton is None:
-                _singleton = InMemoryCognitionFabric()
+    if _singleton is not None:
+        return _singleton
+    with _singleton_lock:
+        if _singleton is None:
+            _singleton = _build_fabric(_resolve_dsn())
     return _singleton
 
 
 def reset_fabric() -> None:
-    """Drop the singleton — for tests only."""
+    """Drop the singleton (closing its pool if present). For tests + DSN changes."""
     global _singleton
     with _singleton_lock:
+        if _singleton is not None:
+            close = getattr(_singleton, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    logger.exception("error closing cognition fabric")
         _singleton = None
+
+
+def set_active_dsn(dsn: str | None) -> None:
+    """Override the DSN at runtime (used by the admin panel) and refresh."""
+    global _override_dsn
+    with _singleton_lock:
+        _override_dsn = dsn or None
+    reset_fabric()
+
+
+def get_active_dsn() -> str | None:
+    """Return the DSN that the next get_fabric() call would use, or None."""
+    return _resolve_dsn()
