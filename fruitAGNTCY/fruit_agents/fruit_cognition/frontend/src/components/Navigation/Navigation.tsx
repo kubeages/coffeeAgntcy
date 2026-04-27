@@ -10,6 +10,7 @@ import { Link as RouterLink } from "react-router-dom"
 import {
   AppBar,
   Box,
+  Button,
   IconButton,
   Stack,
   Toolbar,
@@ -20,7 +21,8 @@ import HelpOutlineIcon from "@mui/icons-material/HelpOutline"
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined"
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined"
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined"
-import { Sprout } from "lucide-react"
+import { Lightbulb, Inbox, Sprout } from "lucide-react"
+import { useLocation } from "react-router-dom"
 
 import { useTheme } from "@/hooks/useTheme"
 import InfoModal from "./InfoModal"
@@ -28,6 +30,15 @@ import InfoModal from "./InfoModal"
 const Navigation: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const { isLightMode, toggleTheme } = useTheme()
+  const { pathname } = useLocation()
+  const navLinkSx = (active: boolean) => ({
+    textTransform: "none" as const,
+    fontWeight: 600,
+    color: active ? "primary.main" : "text.primary",
+    bgcolor: active ? "action.hover" : "transparent",
+    px: 1.25,
+    "&:hover": { bgcolor: "action.hover" },
+  })
 
   return (
     <AppBar position="static" sx={{ minHeight: 52 }}>
@@ -72,6 +83,27 @@ const Navigation: React.FC = () => {
             fruit<span>Cognition</span>
           </Typography>
         </Box>
+
+        <Stack direction="row" spacing={0.5} sx={{ mr: 1 }}>
+          <Button
+            component={RouterLink}
+            to="/cognition"
+            size="small"
+            startIcon={<Lightbulb size={16} strokeWidth={2} />}
+            sx={navLinkSx(pathname.startsWith("/cognition"))}
+          >
+            Cognition
+          </Button>
+          <Button
+            component={RouterLink}
+            to="/decisions"
+            size="small"
+            startIcon={<Inbox size={16} strokeWidth={2} />}
+            sx={navLinkSx(pathname.startsWith("/decisions"))}
+          >
+            Decisions
+          </Button>
+        </Stack>
 
         <Stack direction="row" spacing={0.5}>
           <Tooltip title={`Switch to ${isLightMode ? "dark" : "light"} mode`}>
