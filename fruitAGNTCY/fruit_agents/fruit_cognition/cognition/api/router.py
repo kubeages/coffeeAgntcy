@@ -15,7 +15,9 @@ from pydantic import BaseModel, Field
 from cognition.schemas.belief import Belief
 from cognition.schemas.claim import Claim
 from cognition.schemas.conflict import Conflict
+from cognition.schemas.decision import Decision
 from cognition.schemas.intent_contract import IntentContract
+from cognition.schemas.plan import Plan
 from cognition.services.belief_builder import BeliefBuilder
 from cognition.services.cognition_fabric import get_fabric
 from cognition.services.engine_pipeline import (
@@ -45,6 +47,8 @@ class IntentStateResponse(BaseModel):
     beliefs: list[Belief] = Field(default_factory=list)
     conflicts: list[Conflict] = Field(default_factory=list)
     options: list[EvaluatedOption] = Field(default_factory=list)
+    plans: list[Plan] = Field(default_factory=list)
+    decision: Decision | None = None
 
 
 def _summary(intent: IntentContract) -> IntentSummary:
@@ -107,6 +111,26 @@ def create_cognition_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=f"intent {intent_id!r} not found")
         return evaluation.options
 
+    @router.get("/intent/{intent_id}/plans", response_model=list[Plan])
+    async def list_plans(
+        intent_id: Annotated[str, Path(min_length=1)],
+    ) -> list[Plan]:
+        evaluation = evaluate_intent(intent_id)
+        if evaluation is None:
+            raise HTTPException(status_code=404, detail=f"intent {intent_id!r} not found")
+        return evaluation.plans
+
+    @router.get("/intent/{intent_id}/decision", response_model=Decision)
+    async def get_decision(
+        intent_id: Annotated[str, Path(min_length=1)],
+    ) -> Decision:
+        evaluation = evaluate_intent(intent_id)
+        if evaluation is None:
+            raise HTTPException(status_code=404, detail=f"intent {intent_id!r} not found")
+        if evaluation.decision is None:  # pragma: no cover — pipeline always returns one
+            raise HTTPException(status_code=500, detail="decision not available")
+        return evaluation.decision
+
     @router.get("/intent/{intent_id}/state", response_model=IntentStateResponse)
     async def get_state(
         intent_id: Annotated[str, Path(min_length=1)],
@@ -124,6 +148,8 @@ def create_cognition_router() -> APIRouter:
             beliefs=beliefs,
             conflicts=evaluation.conflicts if evaluation else [],
             options=evaluation.options if evaluation else [],
+            plans=evaluation.plans if evaluation else [],
+            decision=evaluation.decision if evaluation else None,
         )
 
     return router

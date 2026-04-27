@@ -16,6 +16,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from cognition.engines.cost_engine import CostEngine, CostEvaluation
+from cognition.engines.decision_engine import DecisionEngine
 from cognition.engines.policy_guardrail_engine import (
     GuardrailVerdict,
     PolicyGuardrailEngine,
@@ -28,10 +29,13 @@ from cognition.engines.weather_risk_engine import (
 from cognition.schemas.belief import Belief
 from cognition.schemas.claim import Claim
 from cognition.schemas.conflict import Conflict
+from cognition.schemas.decision import Decision
 from cognition.schemas.intent_contract import IntentContract
+from cognition.schemas.plan import Plan
 from cognition.services.belief_builder import BeliefBuilder
 from cognition.services.cognition_fabric import get_fabric
 from cognition.services.conflict_resolver import ConflictResolver
+from cognition.services.split_order_planner import SplitOrderPlanner
 
 
 _belief_builder = BeliefBuilder()
@@ -39,6 +43,8 @@ _resolver = ConflictResolver()
 _cost_engine = CostEngine()
 _weather_engine = WeatherRiskEngine()
 _guardrail = PolicyGuardrailEngine()
+_planner = SplitOrderPlanner()
+_decision_engine = DecisionEngine()
 
 
 class EvaluatedOption(BaseModel):
@@ -73,6 +79,8 @@ class EngineEvaluation(BaseModel):
     intent_id: str
     options: list[EvaluatedOption] = Field(default_factory=list)
     conflicts: list[Conflict] = Field(default_factory=list)
+    plans: list[Plan] = Field(default_factory=list)
+    decision: Decision | None = None
 
 
 def _merge(
@@ -144,8 +152,15 @@ def evaluate_intent(intent_id: str) -> EngineEvaluation | None:
         cost=cost, weather=weather, guardrail=guardrail,
     )
 
+    plans = _planner.plan(intent=intent, beliefs=beliefs)
+    decision = _decision_engine.decide(
+        intent=intent, plans=plans, cost=cost, weather=weather, guardrail=guardrail,
+    )
+
     return EngineEvaluation(
         intent_id=intent_id,
         options=options,
         conflicts=conflicts,
+        plans=plans,
+        decision=decision,
     )

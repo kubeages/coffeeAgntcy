@@ -1,6 +1,7 @@
 from cognition.services.belief_builder import BeliefBuilder
 from cognition.services.claim_mapper import ClaimMapper
 from cognition.services.conflict_resolver import ConflictResolver
+from cognition.services.split_order_planner import SplitOrderPlanner
 from cognition.services.cognition_fabric import (
     CognitionFabric,
     InMemoryCognitionFabric,
@@ -18,6 +19,7 @@ __all__ = [
     "CognitionFabric",
     "ConflictResolver",
     "InMemoryCognitionFabric",
+    "SplitOrderPlanner",
     "IntentManager",
     "SSTPFactory",
     "envelope_enabled",
