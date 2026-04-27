@@ -117,74 +117,79 @@
   }
 
   body[data-theme="light"] {
-    --app-background: #f5f8fd;
+    /* Fruit-shop palette: cream canvas, leaf-green primary, warm-orange
+       secondary, terracotta highlight, charcoal text. Pulled from
+       muiTheme.ts so the chat surface and the cognition surface read
+       as one shop. */
 
-    --node-background: #dee6f9;
-    --node-background-hover: #e3eafa;
-    --node-background-active: #187adc;
+    --app-background: #f8f4ed; /* cream */
 
-    --group-background: rgba(100, 150, 200, 0.1);
-    --edge-label-background: #d5dff7;
-    --edge-label-background-active: #187adc;
-    --edge-label-text: #3c4551;
+    --node-background: #ffffff;
+    --node-background-hover: #f3ede2;
+    --node-background-active: #4cbb6c; /* leaf green */
+
+    --group-background: rgba(76, 187, 108, 0.08);
+    --edge-label-background: #f3ede2;
+    --edge-label-background-active: #4cbb6c;
+    --edge-label-text: #232323;
     --edge-label-text-active: #ffffff;
-    --node-text-primary: #3c4551;
-    --node-text-secondary: #3c4551;
-    --node-icon-background: #c8d5f5;
-    --node-icon-border: #187adc;
+    --node-text-primary: #232323;
+    --node-text-secondary: #5a5a5a;
+    --node-icon-background: #fcefe1;
+    --node-icon-border: #ff9a52;
 
-    --accent-primary: #187adc;
-    --accent-border: #187adc;
-    --blue-700: #00409f;
+    --accent-primary: #4cbb6c; /* leaf green */
+    --accent-border: #c04b2e; /* terracotta */
+    --blue-700: #13693c;
 
-    --nav-background: #f5f8fd;
-    --nav-background-secondary: #eff3fc;
-    --nav-border: #d5dff7;
-    --nav-text: #1d69cc;
+    --nav-background: #ffffff;
+    --nav-background-secondary: #f8f4ed;
+    --nav-border: #ebe2d2;
+    --nav-text: #232323;
 
-    --chat-background: #dee6f9;
-    --chat-background-hover: #d5dff7;
-    --chat-text: #00142b;
-    --chat-input-background: #eff3fc;
-    --chat-dropdown-background: #dee6f9;
-    --chat-dropdown-icon: #3c4551;
+    --chat-background: #ffffff;
+    --chat-background-hover: #f8f4ed;
+    --chat-text: #232323;
+    --chat-input-background: #ffffff;
+    --chat-dropdown-background: #ffffff;
+    --chat-dropdown-icon: #5a5a5a;
 
-    --action-background: #187adc;
-    --action-background-hover: #0d274d;
+    --action-background: #4cbb6c; /* leaf green */
+    --action-background-hover: #13693c;
 
-    --sidebar-background: #fbfcfe;
-    --sidebar-item-selected: #dee6f9;
-    --sidebar-border: #fbfcfe;
-    --sidebar-text: #00142b;
+    --sidebar-background: #f8f4ed;
+    --sidebar-item-selected: #fcefe1; /* warm orange tint */
+    --sidebar-border: #ebe2d2;
+    --sidebar-text: #232323;
 
-    --custom-node-background: #fbfcfe;
-    --custom-node-border: #187adc;
+    --custom-node-background: #ffffff;
+    --custom-node-border: #4cbb6c;
 
     --github-icon: url("@/assets/Github_lightmode.png");
     --agent-directory-icon: url("@/assets/Agent_Icon_light.png");
 
-    --shadow-default: 0 4px 8px rgba(0, 0, 0, 0.1);
-    --overlay-background: #eff3fc;
-    --control-border-weak: #e8eefb;
+    --shadow-default: 0 4px 12px rgba(35, 35, 35, 0.06);
+    --overlay-background: #f8f4ed;
+    --control-border-weak: #ebe2d2;
 
     --modal-background: #ffffff;
-    --modal-border: #dbe0e5;
-    --modal-text: #00142b;
-    --modal-text-secondary: #00142b;
-    --modal-accent: #60a5fa;
-    --modal-hover: #f5f8fd;
-    --modal-button: #00142b;
+    --modal-border: #ebe2d2;
+    --modal-text: #232323;
+    --modal-text-secondary: #5a5a5a;
+    --modal-accent: #4cbb6c;
+    --modal-hover: #f8f4ed;
+    --modal-button: #4cbb6c;
     --modal-button-text: #ffffff;
-    --modal-button-hover: #0d274d;
+    --modal-button-hover: #13693c;
 
     --info-bg: #ffffff;
-    --info-border: #dbe0e5;
-    --info-text: #00142b;
+    --info-border: #ebe2d2;
+    --info-text: #232323;
     --info-close: #b91c1c;
     --info-close-hover: #ef4444;
-    --info-icon-border: #187adc;
+    --info-icon-border: #4cbb6c;
     --info-icon-bg: #ffffff;
-    --info-icon-bg-hover: #f5f8fd;
+    --info-icon-bg-hover: #f8f4ed;
 
     --external-link-button-bg: #fff;
   }

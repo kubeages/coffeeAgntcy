@@ -7,13 +7,21 @@
 
 import React, { useState } from "react"
 import { Link as RouterLink } from "react-router-dom"
-import { AppBar, Box, IconButton, Stack, Toolbar, Tooltip } from "@mui/material"
+import {
+  AppBar,
+  Box,
+  IconButton,
+  Stack,
+  Toolbar,
+  Tooltip,
+  Typography,
+} from "@mui/material"
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline"
 import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined"
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined"
 import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined"
+import { Sprout } from "lucide-react"
 
-import fruitAgntcyLogo from "@/assets/fruitAGNTCY_logo.svg"
 import { useTheme } from "@/hooks/useTheme"
 import InfoModal from "./InfoModal"
 
@@ -24,12 +32,45 @@ const Navigation: React.FC = () => {
   return (
     <AppBar position="static" sx={{ minHeight: 52 }}>
       <Toolbar variant="dense" sx={{ minHeight: 52, gap: 1 }}>
-        <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
-          <img
-            src={fruitAgntcyLogo}
-            alt="Fruit AGNTCY"
-            style={{ height: 36, width: "auto" }}
-          />
+        <Box
+          component={RouterLink}
+          to="/"
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            flexGrow: 1,
+            textDecoration: "none",
+            color: "inherit",
+          }}
+          aria-label="fruitCognition home"
+        >
+          <Box
+            sx={{
+              width: 32,
+              height: 32,
+              borderRadius: "50%",
+              bgcolor: "#fcefe1",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#4cbb6c",
+            }}
+          >
+            <Sprout size={20} strokeWidth={2} />
+          </Box>
+          <Typography
+            variant="h6"
+            sx={{
+              fontFamily: '"Merriweather", "Georgia", serif',
+              fontWeight: 700,
+              fontSize: "1.05rem",
+              letterSpacing: -0.2,
+              "& span": { color: "#4cbb6c" },
+            }}
+          >
+            fruit<span>Cognition</span>
+          </Typography>
         </Box>
 
         <Stack direction="row" spacing={0.5}>
