@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Awaitable, Callable, Literal, Optional, Union
 
@@ -18,6 +19,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from api.admin.models_catalog import ModelInfo, Provider as CatalogProvider, list_models
+from cognition.services.cognition_fabric import (
+    InMemoryCognitionFabric,
+    get_active_dsn,
+    get_fabric,
+    set_active_dsn,
+)
+from cognition.services.pg_cognition_fabric import verify_dsn
 from common import active_llm_config
 
 RebuildHook = Callable[[], Union[None, Awaitable[None]]]
@@ -76,6 +84,39 @@ class LLMTestResponse(BaseModel):
     provider: Provider
     model: str
     latency_ms: int
+
+
+class PgTestRequest(BaseModel):
+    dsn: str = Field(min_length=1, description="postgresql:// connection string")
+
+
+class PgTestResponse(BaseModel):
+    ok: bool
+    message: str
+    latency_ms: int
+
+
+class PgActivePayload(BaseModel):
+    dsn: str = Field(min_length=1)
+
+
+class PgActiveResponse(BaseModel):
+    ok: bool
+    # Source of the active DSN: "override" (admin-set), "env" (COGNITION_PG_DSN), or None.
+    source: Optional[Literal["override", "env"]] = None
+    # DSN as it would be displayed to the user — password redacted.
+    dsn_redacted: Optional[str] = None
+    # When no DSN is configured, fabric falls back to in-memory.
+    backend: Literal["postgres", "in_memory"]
+    message: Optional[str] = None
+
+
+_DSN_PASSWORD_RE = re.compile(r"^(?P<scheme>[^:]+://[^:/?#]+):(?P<password>[^@]+)@")
+
+
+def _redact_dsn(dsn: str) -> str:
+    """Mask the password segment of a postgresql:// DSN."""
+    return _DSN_PASSWORD_RE.sub(r"\g<scheme>:***@", dsn)
 
 
 def _build_litellm_kwargs(req: LLMTestRequest) -> dict:
@@ -280,5 +321,65 @@ def create_admin_router(
             active=None,
             rebuilt=rebuilt,
         )
+
+    # ----- cognition fabric: Postgres endpoint configuration -----
+
+    def _current_pg_state() -> PgActiveResponse:
+        from cognition.services.cognition_fabric import _override_dsn  # noqa
+        import os
+
+        if _override_dsn:
+            source: Optional[Literal["override", "env"]] = "override"
+        elif os.getenv("COGNITION_PG_DSN"):
+            source = "env"
+        else:
+            source = None
+        active = get_active_dsn()
+        backend = "in_memory" if isinstance(get_fabric(), InMemoryCognitionFabric) else "postgres"
+        return PgActiveResponse(
+            ok=True,
+            source=source,
+            dsn_redacted=_redact_dsn(active) if active else None,
+            backend=backend,
+        )
+
+    @router.post("/cognition/pg/test", response_model=PgTestResponse)
+    async def test_pg(req: PgTestRequest) -> PgTestResponse:
+        """One-shot probe of a DSN; does not persist."""
+        started = time.perf_counter()
+        ok, msg = await asyncio.to_thread(verify_dsn, req.dsn, 3.0)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        logger.info("cognition pg probe ok=%s latency_ms=%d", ok, latency_ms)
+        return PgTestResponse(ok=ok, message=msg, latency_ms=latency_ms)
+
+    @router.get("/cognition/pg/active", response_model=PgActiveResponse)
+    async def get_active_pg() -> PgActiveResponse:
+        return _current_pg_state()
+
+    @router.post("/cognition/pg/active", response_model=PgActiveResponse)
+    async def set_active_pg(req: PgActivePayload) -> PgActiveResponse:
+        """Swap the cognition fabric to Postgres at this DSN.
+
+        Verifies the DSN first; only swaps if the probe succeeds.
+        """
+        ok, msg = await asyncio.to_thread(verify_dsn, req.dsn, 3.0)
+        if not ok:
+            raise HTTPException(status_code=400, detail=f"DSN rejected: {msg}")
+        await asyncio.to_thread(set_active_dsn, req.dsn)
+        # Force backend to materialize so the response reflects reality.
+        try:
+            await asyncio.to_thread(get_fabric)
+        except Exception as exc:
+            logger.warning("PG fabric build failed after set_active_dsn: %s", exc)
+            raise HTTPException(status_code=500, detail=f"DSN accepted but fabric init failed: {exc}")
+        state = _current_pg_state()
+        state.message = msg
+        return state
+
+    @router.delete("/cognition/pg/active", response_model=PgActiveResponse)
+    async def clear_active_pg() -> PgActiveResponse:
+        """Drop the admin override; fall back to env DSN or in-memory."""
+        await asyncio.to_thread(set_active_dsn, None)
+        return _current_pg_state()
 
     return router
