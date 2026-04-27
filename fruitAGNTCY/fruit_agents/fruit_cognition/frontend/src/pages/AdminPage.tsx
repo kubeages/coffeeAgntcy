@@ -108,6 +108,17 @@ function formatCost(n?: number | null): string | null {
   return `$${n.toFixed(3)}/1K`
 }
 
+interface PgState {
+  source: "override" | "env" | null
+  dsn_redacted: string | null
+  backend: "postgres" | "in_memory"
+}
+
+interface DecisionState {
+  mode: "heuristic" | "llm"
+  source: "override" | "env"
+}
+
 const AdminPage: React.FC = () => {
   const [cfg, setCfg] = useState<LLMConfig>(loadLLMConfig)
   const [savedCfg, setSavedCfg] = useState<LLMConfig>(loadLLMConfig)
@@ -115,6 +126,16 @@ const AdminPage: React.FC = () => {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<TestResult | null>(null)
   const [savedJustNow, setSavedJustNow] = useState(false)
+
+  // Cognition (PG fabric + decision mode) admin state.
+  const [pgDsn, setPgDsn] = useState("")
+  const [revealDsn, setRevealDsn] = useState(false)
+  const [pgState, setPgState] = useState<PgState | null>(null)
+  const [pgBusy, setPgBusy] = useState(false)
+  const [pgResult, setPgResult] = useState<TestResult | null>(null)
+  const [decisionState, setDecisionState] = useState<DecisionState | null>(null)
+  const [decisionBusy, setDecisionBusy] = useState(false)
+  const [cognitionError, setCognitionError] = useState<string | null>(null)
 
   const [models, setModels] = useState<ModelInfo[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
@@ -325,6 +346,129 @@ const AdminPage: React.FC = () => {
     for (const m of models) map[m.id] = m
     return map
   }, [models])
+
+  // ----- cognition admin: PG + decision mode -----
+
+  const refreshCognitionState = async () => {
+    try {
+      const [pg, dec] = await Promise.all([
+        axios.get<PgState & { ok: boolean }>(
+          `${apiUrl}/admin/cognition/pg/active`,
+        ),
+        axios.get<DecisionState & { ok: boolean }>(
+          `${apiUrl}/admin/cognition/decision/active`,
+        ),
+      ])
+      setPgState({
+        source: pg.data.source,
+        dsn_redacted: pg.data.dsn_redacted,
+        backend: pg.data.backend,
+      })
+      setDecisionState({ mode: dec.data.mode, source: dec.data.source })
+      setCognitionError(null)
+    } catch (err) {
+      const detail = axios.isAxiosError(err)
+        ? err.response?.data?.detail || err.message
+        : "failed to load cognition state"
+      setCognitionError(String(detail))
+    }
+  }
+
+  useEffect(() => {
+    void refreshCognitionState()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const onPgTest = async () => {
+    setPgBusy(true)
+    setPgResult(null)
+    const started = performance.now()
+    try {
+      const r = await axios.post<{
+        ok: boolean
+        message: string
+        latency_ms: number
+      }>(`${apiUrl}/admin/cognition/pg/test`, { dsn: pgDsn })
+      setPgResult({
+        ok: r.data.ok,
+        message: r.data.message,
+        latencyMs: r.data.latency_ms,
+      })
+    } catch (err) {
+      const ax = axios.isAxiosError(err) ? err : null
+      const detail = ax?.response?.data?.detail || ax?.message || "probe failed"
+      setPgResult({
+        ok: false,
+        message: String(detail),
+        latencyMs: Math.round(performance.now() - started),
+      })
+    } finally {
+      setPgBusy(false)
+    }
+  }
+
+  const onPgSave = async () => {
+    setPgBusy(true)
+    setPgResult(null)
+    try {
+      await axios.post(`${apiUrl}/admin/cognition/pg/active`, { dsn: pgDsn })
+      await refreshCognitionState()
+      setPgResult({
+        ok: true,
+        message: "DSN active. Fabric swapped to Postgres.",
+      })
+    } catch (err) {
+      const ax = axios.isAxiosError(err) ? err : null
+      const detail = ax?.response?.data?.detail || ax?.message || "save failed"
+      setPgResult({ ok: false, message: String(detail) })
+    } finally {
+      setPgBusy(false)
+    }
+  }
+
+  const onPgClear = async () => {
+    setPgBusy(true)
+    try {
+      await axios.delete(`${apiUrl}/admin/cognition/pg/active`)
+      await refreshCognitionState()
+      setPgResult({ ok: true, message: "Override cleared." })
+    } catch (err) {
+      const ax = axios.isAxiosError(err) ? err : null
+      const detail = ax?.response?.data?.detail || ax?.message || "clear failed"
+      setPgResult({ ok: false, message: String(detail) })
+    } finally {
+      setPgBusy(false)
+    }
+  }
+
+  const onDecisionMode = async (mode: "heuristic" | "llm") => {
+    setDecisionBusy(true)
+    try {
+      await axios.post(`${apiUrl}/admin/cognition/decision/active`, { mode })
+      await refreshCognitionState()
+    } catch (err) {
+      const ax = axios.isAxiosError(err) ? err : null
+      const detail =
+        ax?.response?.data?.detail || ax?.message || "set mode failed"
+      setCognitionError(String(detail))
+    } finally {
+      setDecisionBusy(false)
+    }
+  }
+
+  const onDecisionClear = async () => {
+    setDecisionBusy(true)
+    try {
+      await axios.delete(`${apiUrl}/admin/cognition/decision/active`)
+      await refreshCognitionState()
+    } catch (err) {
+      const ax = axios.isAxiosError(err) ? err : null
+      const detail = ax?.response?.data?.detail || ax?.message || "clear failed"
+      setCognitionError(String(detail))
+    } finally {
+      setDecisionBusy(false)
+    }
+  }
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
@@ -640,10 +784,230 @@ const AdminPage: React.FC = () => {
           </CardContent>
         </Card>
 
+        <Card sx={{ mt: 3 }}>
+          <CardHeader
+            title="Cognition fabric"
+            subheader="Postgres backend and decision-engine mode"
+          />
+          <CardContent>
+            {cognitionError ? (
+              <Alert
+                severity="error"
+                sx={{ mb: 2 }}
+                onClose={() => setCognitionError(null)}
+              >
+                {cognitionError}
+              </Alert>
+            ) : null}
+
+            <Stack spacing={3}>
+              {/* Postgres */}
+              <Box>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={1}
+                  sx={{ mb: 1 }}
+                >
+                  <Typography variant="subtitle1">Postgres backend</Typography>
+                  {pgState ? (
+                    <Chip
+                      label={`backend: ${pgState.backend}`}
+                      size="small"
+                      color={
+                        pgState.backend === "postgres" ? "success" : "default"
+                      }
+                    />
+                  ) : null}
+                  {pgState?.source ? (
+                    <Chip
+                      label={`source: ${pgState.source}`}
+                      size="small"
+                      variant="outlined"
+                    />
+                  ) : null}
+                </Stack>
+                {pgState?.dsn_redacted ? (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ fontFamily: "monospace", display: "block", mb: 1 }}
+                  >
+                    Active: {pgState.dsn_redacted}
+                  </Typography>
+                ) : (
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: "block", mb: 1 }}
+                  >
+                    No DSN configured — cognition state is in-memory only and
+                    lost on restart.
+                  </Typography>
+                )}
+                <TextField
+                  fullWidth
+                  label="DSN"
+                  placeholder="postgresql://user:password@host:5432/dbname"
+                  size="small"
+                  type={revealDsn ? "text" : "password"}
+                  value={pgDsn}
+                  onChange={(e) => setPgDsn(e.target.value)}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          aria-label="toggle DSN visibility"
+                          onClick={() => setRevealDsn((v) => !v)}
+                          edge="end"
+                          size="small"
+                        >
+                          {revealDsn ? (
+                            <VisibilityOffIcon />
+                          ) : (
+                            <VisibilityIcon />
+                          )}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }}
+                />
+                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => void onPgTest()}
+                    disabled={pgBusy || !pgDsn}
+                    startIcon={
+                      pgBusy ? <CircularProgress size={14} /> : <RefreshIcon />
+                    }
+                  >
+                    Test
+                  </Button>
+                  <Button
+                    variant="contained"
+                    size="small"
+                    onClick={() => void onPgSave()}
+                    disabled={pgBusy || !pgDsn}
+                    startIcon={<SaveIcon />}
+                  >
+                    Save active
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    size="small"
+                    onClick={() => void onPgClear()}
+                    disabled={pgBusy}
+                    startIcon={<RestartAltIcon />}
+                  >
+                    Clear override
+                  </Button>
+                </Stack>
+                {pgResult ? (
+                  <Alert
+                    severity={pgResult.ok ? "success" : "error"}
+                    icon={
+                      pgResult.ok ? <CheckCircleIcon /> : <ErrorOutlineIcon />
+                    }
+                    sx={{ mt: 1 }}
+                    onClose={() => setPgResult(null)}
+                  >
+                    {pgResult.message}
+                    {pgResult.latencyMs != null
+                      ? ` · ${pgResult.latencyMs} ms`
+                      : ""}
+                  </Alert>
+                ) : null}
+              </Box>
+
+              <Divider />
+
+              {/* Decision engine mode */}
+              <Box>
+                <Stack
+                  direction="row"
+                  alignItems="center"
+                  spacing={1}
+                  sx={{ mb: 1 }}
+                >
+                  <Typography variant="subtitle1">Decision engine</Typography>
+                  {decisionState ? (
+                    <Chip
+                      label={`mode: ${decisionState.mode}`}
+                      size="small"
+                      color={
+                        decisionState.mode === "llm" ? "primary" : "default"
+                      }
+                    />
+                  ) : null}
+                  {decisionState?.source ? (
+                    <Chip
+                      label={`source: ${decisionState.source}`}
+                      size="small"
+                      variant="outlined"
+                    />
+                  ) : null}
+                </Stack>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mb: 1 }}
+                >
+                  Heuristic ranks plans by weather risk, then cost, then plan
+                  type. LLM mode asks the configured model to pick a plan; falls
+                  back to heuristic on any failure.
+                </Typography>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant={
+                      decisionState?.mode === "heuristic" &&
+                      decisionState.source === "override"
+                        ? "contained"
+                        : "outlined"
+                    }
+                    size="small"
+                    disabled={decisionBusy}
+                    onClick={() => void onDecisionMode("heuristic")}
+                  >
+                    Heuristic
+                  </Button>
+                  <Button
+                    variant={
+                      decisionState?.mode === "llm" &&
+                      decisionState.source === "override"
+                        ? "contained"
+                        : "outlined"
+                    }
+                    size="small"
+                    disabled={decisionBusy}
+                    onClick={() => void onDecisionMode("llm")}
+                  >
+                    LLM
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="warning"
+                    size="small"
+                    disabled={
+                      decisionBusy || decisionState?.source !== "override"
+                    }
+                    onClick={() => void onDecisionClear()}
+                    startIcon={<RestartAltIcon />}
+                  >
+                    Clear override
+                  </Button>
+                </Stack>
+              </Box>
+            </Stack>
+          </CardContent>
+        </Card>
+
         <Box sx={{ mt: 3, opacity: 0.7 }}>
           <Typography variant="caption">
             Models endpoint: <code>{apiUrl}/admin/llm/models</code> · Test
-            endpoint: <code>{apiUrl}/admin/llm/test</code>.
+            endpoint: <code>{apiUrl}/admin/llm/test</code> · Cognition:{" "}
+            <code>{apiUrl}/admin/cognition/pg|decision/active</code>.
           </Typography>
         </Box>
       </Container>
