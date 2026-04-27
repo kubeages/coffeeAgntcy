@@ -7,28 +7,24 @@
 
 import axios from "axios"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Link as RouterLink } from "react-router-dom"
 import {
   Alert,
-  AppBar,
   Box,
   Button,
   Chip,
   CircularProgress,
   Container,
   Divider,
-  IconButton,
   Paper,
   Stack,
-  Toolbar,
   Tooltip,
   Typography,
 } from "@mui/material"
-import ArrowBackIcon from "@mui/icons-material/ArrowBack"
 import CheckCircleIcon from "@mui/icons-material/CheckCircle"
 import CancelIcon from "@mui/icons-material/Cancel"
 import RefreshIcon from "@mui/icons-material/Refresh"
 import ChangeCircleIcon from "@mui/icons-material/ChangeCircle"
+import Navigation from "@/components/Navigation/Navigation"
 
 import {
   approveIntent,
@@ -298,40 +294,59 @@ const DecisionsPage = () => {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
-      <AppBar position="static" color="default" elevation={1}>
-        <Toolbar>
-          <IconButton
-            component={RouterLink}
-            to="/"
-            edge="start"
-            aria-label="back"
-          >
-            <ArrowBackIcon />
-          </IconButton>
-          <Typography variant="h6" sx={{ flexGrow: 1, ml: 1 }}>
-            Decisions inbox
-          </Typography>
-          <Tooltip
-            title={`Reading from ${getCognitionApiUrl()}/cognition/approvals`}
-          >
-            <Typography variant="caption" color="text.secondary" sx={{ mr: 2 }}>
-              {getCognitionApiUrl().replace(/^https?:\/\//, "")} · polling{" "}
-              {POLL_INTERVAL_MS / 1000}s
-            </Typography>
-          </Tooltip>
-          <Button
-            startIcon={<RefreshIcon />}
-            size="small"
-            variant="outlined"
-            onClick={() => void reload()}
-            disabled={loading}
-          >
-            Refresh
-          </Button>
-        </Toolbar>
-      </AppBar>
+      <Navigation />
 
       <Container maxWidth="md" sx={{ py: 3 }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          alignItems={{ xs: "flex-start", sm: "flex-end" }}
+          justifyContent="space-between"
+          spacing={2}
+          sx={{ mb: 2 }}
+        >
+          <Box>
+            <Typography
+              variant="h5"
+              sx={{
+                fontFamily: '"Merriweather", "Georgia", serif',
+                fontWeight: 700,
+                letterSpacing: -0.3,
+              }}
+            >
+              Decisions inbox
+            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ maxWidth: 720 }}
+            >
+              When the cognition layer recommends a plan that trips a policy
+              listed in the intent's <code>human_approval_required_if</code>{" "}
+              (e.g. high weather risk or above-budget price), it lands here and
+              waits for a human. Approve to commit the recommended plan, reject
+              to drop the intent, or request an alternative to send the request
+              back through the engines and produce a different recommendation.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Tooltip
+              title={`Reading from ${getCognitionApiUrl()}/cognition/approvals`}
+            >
+              <Typography variant="caption" color="text.secondary">
+                polling {POLL_INTERVAL_MS / 1000}s
+              </Typography>
+            </Tooltip>
+            <Button
+              startIcon={<RefreshIcon />}
+              size="small"
+              variant="outlined"
+              onClick={() => void reload()}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
+          </Stack>
+        </Stack>
         {error ? (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
             {error}

@@ -5,17 +5,14 @@
 
 import axios from "axios"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Link as RouterLink } from "react-router-dom"
 import {
   Alert,
-  AppBar,
   Box,
   Button,
   Chip,
   CircularProgress,
   Container,
   Divider,
-  IconButton,
   List,
   ListItemButton,
   ListItemText,
@@ -27,12 +24,11 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Toolbar,
   Tooltip,
   Typography,
 } from "@mui/material"
-import ArrowBackIcon from "@mui/icons-material/ArrowBack"
 import RefreshIcon from "@mui/icons-material/Refresh"
+import Navigation from "@/components/Navigation/Navigation"
 
 import {
   fetchIntents,
@@ -544,36 +540,57 @@ const CognitionPage = () => {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
-      <AppBar position="static" color="default" elevation={1}>
-        <Toolbar>
-          <IconButton
-            component={RouterLink}
-            to="/"
-            edge="start"
-            aria-label="back"
-          >
-            <ArrowBackIcon />
-          </IconButton>
-          <Typography variant="h6" sx={{ flexGrow: 1, ml: 1 }}>
-            Cognition
-          </Typography>
-          <Tooltip title={`Reading from ${cognitionUrl}/cognition`}>
-            <Typography variant="caption" color="text.secondary" sx={{ mr: 2 }}>
-              {cognitionUrl.replace(/^https?:\/\//, "")}
-            </Typography>
-          </Tooltip>
-          <Button
-            startIcon={<RefreshIcon />}
-            onClick={refreshAll}
-            size="small"
-            variant="outlined"
-          >
-            Refresh
-          </Button>
-        </Toolbar>
-      </AppBar>
+      <Navigation />
 
       <Container maxWidth="xl" sx={{ py: 3 }}>
+        <Stack
+          direction={{ xs: "column", sm: "row" }}
+          alignItems={{ xs: "flex-start", sm: "flex-end" }}
+          justifyContent="space-between"
+          spacing={2}
+          sx={{ mb: 2 }}
+        >
+          <Box>
+            <Typography
+              variant="h5"
+              sx={{
+                fontFamily: '"Merriweather", "Georgia", serif',
+                fontWeight: 700,
+                letterSpacing: -0.3,
+              }}
+            >
+              Cognition
+            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ maxWidth: 720 }}
+            >
+              Read-only browser for the cognition fabric. Each chat order
+              creates an <strong>intent</strong>; each agent response feeds
+              <strong> claims</strong> back into the fabric, which the engine
+              pipeline aggregates into <strong>beliefs</strong>,{" "}
+              <strong>options</strong>, and <strong>conflicts</strong>. Pick an
+              intent on the left to inspect everything the system knows about
+              it.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Tooltip title={`Reading from ${cognitionUrl}/cognition`}>
+              <Typography variant="caption" color="text.secondary">
+                {cognitionUrl.replace(/^https?:\/\//, "")}
+              </Typography>
+            </Tooltip>
+            <Button
+              startIcon={<RefreshIcon />}
+              onClick={refreshAll}
+              size="small"
+              variant="outlined"
+            >
+              Refresh
+            </Button>
+          </Stack>
+        </Stack>
         {error ? (
           <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
             {error}

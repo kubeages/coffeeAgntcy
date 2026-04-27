@@ -51,6 +51,11 @@ export const PUBLISH_SUBSCRIBE_CONFIG: GraphConfig = {
         ),
         label1: "Auction Agent",
         label2: "Buyer",
+        description:
+          "Supervisor for the fruit auction. Receives the buyer's request, " +
+          "calls each farm's inventory agent in parallel, picks the best " +
+          "supply option(s), and confirms the order. Backed by the " +
+          "auction-supervisor service running LangGraph.",
         handles: HANDLE_TYPES.SOURCE,
         verificationStatus: VERIFICATION_STATUS.VERIFIED,
         hasBadgeDetails: true,
@@ -65,6 +70,11 @@ export const PUBLISH_SUBSCRIBE_CONFIG: GraphConfig = {
       type: NODE_TYPES.TRANSPORT,
       data: {
         label: "Transport: ",
+        description:
+          "The transport layer that carries A2A messages between " +
+          "agents. For the publish/subscribe pattern this is typically " +
+          "NATS; the agentless edge labels resolve to the actual " +
+          "protocol at runtime.",
         githubLink: `${urlsConfig.github.appSdkBaseUrl}${urlsConfig.github.transports.general}`,
       },
       position: { x: 229.02370449534635, y: 284.688426426175 },
@@ -76,6 +86,12 @@ export const PUBLISH_SUBSCRIBE_CONFIG: GraphConfig = {
         icon: FruitFarmIcon,
         label1: "Brazil",
         label2: "Mango Grove",
+        description:
+          "Brazilian mango farm agent. Reports current inventory, unit " +
+          "price, quality and origin when the auction queries it. Intended " +
+          "to demonstrate a supplier whose identity verification has not " +
+          "completed yet (the auction can still talk to it but the " +
+          "guardrail flags it).",
         handles: HANDLE_TYPES.TARGET,
         farmName: FarmName?.BrazilMangoFarm || "Brazil Mango Grove",
         verificationStatus: VERIFICATION_STATUS.FAILED,
@@ -91,6 +107,11 @@ export const PUBLISH_SUBSCRIBE_CONFIG: GraphConfig = {
         icon: FruitFarmIcon,
         label1: "Colombia",
         label2: "Apple Orchard",
+        description:
+          "Colombian apple orchard agent. Reports inventory, price and " +
+          "quality. Carries a verified AGNTCY identity badge with policies " +
+          "attached, so the cognition layer trusts its claims and the " +
+          "guardrail engine treats it as an allowed supplier.",
         handles: HANDLE_TYPES.ALL,
         farmName: FarmName?.ColombiaAppleFarm || "Colombia Apple Orchard",
         verificationStatus: VERIFICATION_STATUS.VERIFIED,
@@ -108,6 +129,11 @@ export const PUBLISH_SUBSCRIBE_CONFIG: GraphConfig = {
         icon: FruitFarmIcon,
         label1: "Vietnam",
         label2: "Banana Plantation",
+        description:
+          "Vietnamese banana plantation agent. Reports inventory, price " +
+          "and quality on demand. Verified identity but no extra " +
+          "policies attached, so the guardrail uses default thresholds " +
+          "for budget and quality.",
         handles: HANDLE_TYPES.TARGET,
         farmName: FarmName?.VietnamBananaFarm || "Vietnam Banana Plantation",
         verificationStatus: VERIFICATION_STATUS.VERIFIED,
@@ -125,6 +151,11 @@ export const PUBLISH_SUBSCRIBE_CONFIG: GraphConfig = {
         icon: <TiWeatherCloudy className="dark-icon h-4 w-4" />,
         label1: "MCP Server",
         label2: "Weather",
+        description:
+          "MCP server that exposes weather forecasts per region. The " +
+          "cognition layer consumes its responses as weather_risk claims, " +
+          "which the WeatherRiskEngine then maps into low / medium / " +
+          "high risk levels per supplier origin.",
         handles: HANDLE_TYPES.TARGET,
         githubLink: `${urlsConfig.github.baseUrl}${urlsConfig.github.agents.weatherMcp}`,
         agentDirectoryLink: `${urlsConfig.agentDirectory.baseUrl}${urlsConfig.agentDirectory.agents.weatherMcp}`,
@@ -138,6 +169,11 @@ export const PUBLISH_SUBSCRIBE_CONFIG: GraphConfig = {
         icon: <Calculator className="dark-icon h-4 w-4" />,
         label1: "MCP Server",
         label2: "Payment",
+        description:
+          "MCP server that authorises and confirms payments for orders " +
+          "the auction commits to. Emits payment_status claims back into " +
+          "the cognition fabric (status, amount, order_id) so the inbox " +
+          "can show whether an approved order has actually settled.",
         handles: HANDLE_TYPES.TARGET,
         verificationStatus: VERIFICATION_STATUS.VERIFIED,
         hasBadgeDetails: true,
@@ -244,6 +280,12 @@ export const GROUP_COMMUNICATION_CONFIG: GraphConfig = {
         ),
         label1: "Buyer",
         label2: "Logistics Agent",
+        description:
+          "Buyer-side supervisor in the logistics group. Translates the " +
+          "user's natural-language order into a structured request " +
+          "(farm + quantity + price), broadcasts it across the group, " +
+          "and waits for the shipper and accountant to confirm delivery " +
+          "and payment.",
         handles: HANDLE_TYPES.SOURCE,
         githubLink: `${urlsConfig.github.baseUrl}${urlsConfig.github.agents.logisticSupervisor}`,
         agentDirectoryLink: urlsConfig.agentDirectory.baseUrl,
@@ -258,6 +300,11 @@ export const GROUP_COMMUNICATION_CONFIG: GraphConfig = {
       data: {
         label: "Transport: SLIM",
         compact: true,
+        description:
+          "SLIM (Shared Lightweight Inter-agent Messaging) is the secure " +
+          "group-comm transport from AGNTCY. It moderates the group, " +
+          "fans messages out to every member, and keeps the session " +
+          "encrypted. The logistics demo runs entirely over it.",
         githubLink: `${urlsConfig.github.appSdkBaseUrl}${urlsConfig.github.transports.group}`,
       },
       position: { x: 380, y: 270 },
@@ -277,6 +324,11 @@ export const GROUP_COMMUNICATION_CONFIG: GraphConfig = {
         ),
         label1: "Tatooine",
         label2: "Strawberry Field",
+        description:
+          "Stand-in farm in the logistics group communication demo. " +
+          "Receives orders broadcast over the SLIM transport and " +
+          "responds with shipping and inventory acknowledgements that " +
+          "the buyer aggregates into the final delivery summary.",
         handles: HANDLE_TYPES.ALL,
         farmName: "Tatooine Strawberry Field",
         githubLink: `${urlsConfig.github.baseUrl}${urlsConfig.github.agents.logisticFarm}`,
@@ -295,6 +347,12 @@ export const GROUP_COMMUNICATION_CONFIG: GraphConfig = {
         ),
         label1: "Shipper",
         label2: "Shipper Agent",
+        description:
+          "Logistics shipper agent. Picks up an accepted order from the " +
+          "farm, runs the (mock) customs clearance + transit steps, and " +
+          "emits state updates as it goes (HANDOVER_TO_SHIPPER → " +
+          "CUSTOMS_CLEARANCE → DELIVERED). The cognition layer turns " +
+          "those into shipping_cost and delivery_sla claims.",
         handles: HANDLE_TYPES.TARGET,
         agentName: "Shipper Logistics",
         githubLink: `${urlsConfig.github.baseUrl}${urlsConfig.github.agents.logisticShipper}`,
@@ -313,6 +371,11 @@ export const GROUP_COMMUNICATION_CONFIG: GraphConfig = {
         ),
         label1: "Accountant",
         label2: "Accountant Agent",
+        description:
+          "Logistics accountant agent. Confirms the price the shipper " +
+          "and farm agreed on, emits PAYMENT_COMPLETE once funds are " +
+          "released. Maps to a payment_status claim in the cognition " +
+          "fabric so the order's settlement state stays observable.",
         handles: HANDLE_TYPES.TARGET,
         agentName: "Accountant Logistics",
         githubLink: `${urlsConfig.github.baseUrl}${urlsConfig.github.agents.logisticAccountant}`,
@@ -395,6 +458,12 @@ export const DISCOVERY_CONFIG: GraphConfig = {
         ),
         label1: "Agentic Recruiter",
         label2: "Discovery and delegation",
+        description:
+          "Recruiter supervisor used by the on-demand discovery " +
+          "pattern. Queries the AGNTCY Directory for agents whose " +
+          "capabilities match the user's goal, evaluates the " +
+          "candidates, and delegates the actual task to whichever " +
+          "ones win. Independent of the auction / logistics flows.",
         handles: HANDLE_TYPES.ALL,
         extraHandles: [
           { id: "target-right", type: "target", position: "right" },
@@ -418,6 +487,11 @@ export const DISCOVERY_CONFIG: GraphConfig = {
         ),
         label1: "Directory",
         label2: "AGNTCY Agent Directory",
+        description:
+          "Read-only view of the AGNTCY Agent Directory — a catalogue " +
+          "of available agents indexed by capability and by AGNTCY " +
+          "identity badge. The recruiter queries it during on-demand " +
+          "discovery; the cognition layer doesn't write to it.",
         handles: HANDLE_TYPES.ALL,
         extraHandles: [{ id: "source-left", type: "source", position: "left" }],
         githubLink: `${urlsConfig.agentDirectory.github}`,

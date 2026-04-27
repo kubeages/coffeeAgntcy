@@ -128,6 +128,34 @@ export function useMainArea({
 
   const handleCloseInfoDrawer = useCallback(() => setInfoDrawerOpen(false), [])
 
+  /** Drawer "View badge & policies" button → close drawer + open the
+   *  existing IdentityModal anchored to the screen centre. */
+  const handleOpenIdentityFromInfoDrawer = useCallback(
+    (slug: string) => {
+      // Best-effort: find the node whose slug or label1 matches and open
+      // the identity modal with its data.
+      const match = nodes.find((n) => {
+        const d = n.data as unknown as CustomNodeData | undefined
+        if (!d) return false
+        return d.slug === slug || d.label1 === slug
+      })
+      const matchData = match?.data as unknown as CustomNodeData | undefined
+      if (!matchData) return
+      setInfoDrawerOpen(false)
+      const isMcpServer = matchData.label1?.includes("MCP Server") ?? false
+      const w = typeof window !== "undefined" ? window.innerWidth : 1024
+      const h = typeof window !== "undefined" ? window.innerHeight : 768
+      handleOpenIdentityModal(
+        matchData,
+        { x: w / 2, y: h / 2 },
+        matchData.label1 ?? "",
+        matchData,
+        isMcpServer,
+      )
+    },
+    [handleOpenIdentityModal, nodes],
+  )
+
   useMainAreaDiscoveryGraph({
     pattern,
     discoveryResponseEvent,
@@ -278,6 +306,7 @@ export function useMainArea({
     infoDrawerOpen,
     infoDrawerData,
     handleCloseInfoDrawer,
+    handleOpenIdentityFromInfoDrawer,
     onPaneClick,
     onNodeDrag,
   }

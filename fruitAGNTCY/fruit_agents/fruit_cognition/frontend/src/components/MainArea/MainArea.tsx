@@ -51,6 +51,7 @@ const MainArea: React.FC<MainAreaProps> = (props) => {
     infoDrawerOpen,
     infoDrawerData,
     handleCloseInfoDrawer,
+    handleOpenIdentityFromInfoDrawer,
     onPaneClick,
     onNodeDrag,
   } = useMainArea(props)
@@ -103,6 +104,7 @@ const MainArea: React.FC<MainAreaProps> = (props) => {
         open={infoDrawerOpen}
         onClose={handleCloseInfoDrawer}
         data={infoDrawerData}
+        onOpenIdentity={handleOpenIdentityFromInfoDrawer}
       />
     </div>
   )

@@ -9,10 +9,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Link as RouterLink } from "react-router-dom"
 import {
   Alert,
-  AppBar,
   Autocomplete,
   Box,
   Button,
@@ -30,11 +28,9 @@ import {
   MenuItem,
   Stack,
   TextField,
-  Toolbar,
   Tooltip,
   Typography,
 } from "@mui/material"
-import ArrowBackIcon from "@mui/icons-material/ArrowBack"
 import VisibilityIcon from "@mui/icons-material/Visibility"
 import VisibilityOffIcon from "@mui/icons-material/VisibilityOff"
 import SaveIcon from "@mui/icons-material/Save"
@@ -43,6 +39,7 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle"
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline"
 import RefreshIcon from "@mui/icons-material/Refresh"
 import axios from "axios"
+import Navigation from "@/components/Navigation/Navigation"
 
 import {
   type LLMConfig,
@@ -472,32 +469,32 @@ const AdminPage: React.FC = () => {
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
-      <AppBar position="sticky">
-        <Toolbar>
-          <Tooltip title="Back to app">
-            <IconButton
-              component={RouterLink}
-              to="/"
-              edge="start"
-              sx={{ mr: 1 }}
-            >
-              <ArrowBackIcon />
-            </IconButton>
-          </Tooltip>
+      <Navigation />
+
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Box sx={{ mb: 3 }}>
           <Typography
             variant="h5"
             sx={{
-              flexGrow: 1,
               fontFamily: '"Merriweather", "Georgia", serif',
+              fontWeight: 700,
               letterSpacing: -0.3,
             }}
           >
-            Settings · LLM
+            Settings
           </Typography>
-        </Toolbar>
-      </AppBar>
-
-      <Container maxWidth="md" sx={{ py: 4 }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ maxWidth: 720, mt: 0.5 }}
+          >
+            Per-browser configuration for the LLM that powers the agents and the
+            cognition layer's runtime backends. Credentials and DSNs entered
+            here are only stored in this browser; pushing the active config
+            propagates it to every supervisor so the next prompt uses it.
+            Nothing here modifies cluster Secrets.
+          </Typography>
+        </Box>
         <Card>
           <CardHeader
             title="Bring-your-own LLM credentials"
