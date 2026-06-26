@@ -252,10 +252,15 @@ dynamic_workflow_agent = DynamicWorkflowAgent(
 # Root Supervisor Agent
 # ---------------------------------------------------------------------------
 
-require_streaming_capability("recruiter_supervisor", LLM_MODEL)
+# Read the active model at module-execution time (not the import-time constant)
+# so the admin Settings panel can hot-swap it: active_llm_config.apply() sets
+# os.environ["LLM_MODEL"], then the /admin/active-config rebuild hook calls
+# importlib.reload(agent) which re-runs this and rebuilds the agent.
+_active_model = os.getenv("LLM_MODEL") or LLM_MODEL
+require_streaming_capability("recruiter_supervisor", _active_model)
 root_agent = Agent(
     name="recruiter_supervisor",
-    model=LiteLlm(model=LLM_MODEL),
+    model=LiteLlm(model=_active_model),
     description="The main recruiter supervisor agent that finds and delegates tasks to agents.",
     instruction="""You are a Recruiter Supervisor agent. Your job is to help users find agents
 from the AGNTCY directory, evaluate them, and connect them to selected agents.
