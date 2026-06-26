@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph import MessagesState
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 from ioa_observe.sdk.decorators import agent, graph
 
 from agents.supervisors.logistics.graph.tools import (
@@ -108,6 +109,9 @@ class GraphState(MessagesState):
 @agent(name="logistic_agent")
 class LogisticGraph:
     def __init__(self):
+        # Per-conversation memory: a stable thread_id (conversation_id) lets the
+        # graph load + append prior turns so the supervisor keeps context.
+        self.checkpointer = MemorySaver()
         self.graph = self.build_graph()
 
     @graph(name="logistic_graph")
@@ -149,7 +153,7 @@ class LogisticGraph:
         workflow.add_edge(NodeStates.ORDERS, END)
         workflow.add_edge(NodeStates.ORDERS_STREAMING, END)
 
-        return workflow.compile()
+        return workflow.compile(checkpointer=self.checkpointer)
 
 
     async def _orders_node(self, state: GraphState) -> dict:
@@ -395,7 +399,7 @@ class LogisticGraph:
             error_message = f"I encountered an issue creating the order: {str(e)}"
             yield {"messages": [AIMessage(content=error_message)]}
 
-    async def serve(self, prompt: str, intent_id: str | None = None):
+    async def serve(self, prompt: str, intent_id: str | None = None, conversation_id: str | None = None):
         """
         Processes the input prompt and returns a response from the graph.
         Args:
@@ -416,7 +420,7 @@ class LogisticGraph:
                 }
                 ],
                 "intent_id": intent_id,
-            }, {"configurable": {"thread_id": uuid.uuid4()}})
+            }, {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}})
 
             messages = result.get("messages", [])
             if not messages:
@@ -436,7 +440,7 @@ class LogisticGraph:
             logger.error(f"Error in serve method: {e}")
             raise Exception(str(e))
 
-    async def streaming_serve(self, prompt: str, intent_id: str | None = None):
+    async def streaming_serve(self, prompt: str, intent_id: str | None = None, conversation_id: str | None = None):
         """
         Streams real-time order processing events using LangGraph's astream_events API.
         
@@ -498,7 +502,7 @@ class LogisticGraph:
             # This provides fine-grained control over streaming, emitting events for:
             # - Node starts/ends (on_chain_start, on_chain_end)
             # - Intermediate outputs (on_chain_stream)
-            async for event in self.graph.astream_events(state, {"configurable": {"thread_id": uuid.uuid4()}},
+            async for event in self.graph.astream_events(state, {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}},
                                                          version="v2"):
                 logger.debug(f"Event: {event}")
 

@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage, Human
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph import MessagesState
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.prebuilt import ToolNode
 from ioa_observe.sdk.decorators import agent, graph
 
@@ -166,6 +167,10 @@ class GraphState(MessagesState):
 @agent(name="exchange_agent")
 class ExchangeGraph:
     def __init__(self):
+        # In-process per-conversation memory. A stable thread_id (conversation_id)
+        # makes the graph load + append to the prior turns' messages so the
+        # supervisor has context across turns (e.g. "specify a farm" -> "Brazil").
+        self.checkpointer = MemorySaver()
         self.graph = self.build_graph()
 
     @graph(name="exchange_graph")
@@ -235,7 +240,7 @@ class ExchangeGraph:
         workflow.add_edge(NodeStates.ORDERS_TOOLS, NodeStates.ORDERS)
 
         workflow.add_edge(NodeStates.GENERAL_INFO, END)
-        return workflow.compile()
+        return workflow.compile(checkpointer=self.checkpointer)
     
     async def _supervisor_node(self, state: GraphState) -> dict:
         """
@@ -649,7 +654,7 @@ class ExchangeGraph:
             "messages": [AIMessage(content="I'm not sure how to handle that. Could you please clarify?")],
         }
 
-    async def serve(self, prompt: str, intent_id: str | None = None) -> str:
+    async def serve(self, prompt: str, intent_id: str | None = None, conversation_id: str | None = None) -> str:
         """
         Processes the input prompt and returns a complete response from the graph execution.
         
@@ -685,7 +690,7 @@ class ExchangeGraph:
                 }
                 ],
                 "intent_id": intent_id,
-            }, {"configurable": {"thread_id": uuid.uuid4()}})
+            }, {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}})
 
             # Extract messages from the final state
             # The messages list contains the full conversation history including user, AI, and tool messages
@@ -710,7 +715,7 @@ class ExchangeGraph:
             logger.error(f"Error in serve method: {e}")
             raise Exception(str(e))
 
-    async def streaming_serve(self, prompt: str, intent_id: str | None = None):
+    async def streaming_serve(self, prompt: str, intent_id: str | None = None, conversation_id: str | None = None):
         """
         Streams the graph execution using LangGraph's astream_events API, yielding chunks as they arrive.
         
@@ -759,7 +764,7 @@ class ExchangeGraph:
             # This provides fine-grained control over streaming, emitting events for:
             # - Node starts/ends (on_chain_start, on_chain_end)
             # - Intermediate outputs (on_chain_stream)
-            async for event in self.graph.astream_events(state, {"configurable": {"thread_id": uuid.uuid4()}}, version="v2"):
+            async for event in self.graph.astream_events(state, {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}}, version="v2"):
                 logger.debug(f"Event: {event}")
                 
                 # Filter for "on_chain_stream" events which contain intermediate node outputs

@@ -9,6 +9,7 @@ import type { RecruiterStreamingEvent } from "./recruiterStreaming.types"
 import { getStreamingEndpointForPattern, PATTERNS } from "@/utils/patternUtils"
 import { isLocalDev, parseFetchError } from "@/utils/const.ts"
 import { logger } from "@/utils/logger"
+import { getConversationId } from "@/utils/conversation"
 
 const isValidRecruiterStreamingEvent = (
   data: unknown,
@@ -80,7 +81,7 @@ export const useRecruiterStreamingStore = create<RecruiterStreamingStoreState>(
           method: "POST",
           credentials: isLocalDev ? "omit" : "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, conversation_id: getConversationId(), session_id: getConversationId() }),
           signal: abortController.signal,
         })
 

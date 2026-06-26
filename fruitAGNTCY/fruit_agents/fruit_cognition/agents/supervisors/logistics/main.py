@@ -94,6 +94,9 @@ app.include_router(create_cognition_router())
 
 class PromptRequest(BaseModel):
   prompt: str
+  # Stable per-chat id from the UI; used as the LangGraph thread_id so the
+  # supervisor remembers the conversation across turns. Optional for back-compat.
+  conversation_id: str | None = None
 
 intent_manager = IntentManager()
 
@@ -108,7 +111,7 @@ async def handle_prompt(request: PromptRequest, req: Request):
     with session_start() as session_id:
       timeout_val = int(os.getenv("LOGISTIC_TIMEOUT", "200"))
       result = await asyncio.wait_for(
-        logistic_graph.serve(request.prompt, intent_id=intent.intent_id),
+        logistic_graph.serve(request.prompt, intent_id=intent.intent_id, conversation_id=request.conversation_id),
         timeout=timeout_val
       )
       logger.info(f"Final result from LangGraph: {result}")
@@ -198,7 +201,7 @@ async def handle_stream_prompt(request: PromptRequest, req: Request):
 
           async def stream_generator():
               try:
-                  async for chunk in logistic_graph.streaming_serve(request.prompt, intent_id=intent.intent_id):
+                  async for chunk in logistic_graph.streaming_serve(request.prompt, intent_id=intent.intent_id, conversation_id=request.conversation_id):
                       yield json.dumps({
                           "response": chunk,
                           "session_id": session_id["executionID"],

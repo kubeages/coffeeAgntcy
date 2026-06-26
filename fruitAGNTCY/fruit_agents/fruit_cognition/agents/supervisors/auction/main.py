@@ -105,6 +105,9 @@ app.include_router(create_cognition_router())
 
 class PromptRequest(BaseModel):
   prompt: str
+  # Stable per-chat id from the UI; used as the LangGraph thread_id so the
+  # supervisor remembers the conversation across turns. Optional for back-compat.
+  conversation_id: str | None = None
 
 intent_manager = IntentManager()
 
@@ -168,7 +171,7 @@ async def handle_prompt(request: PromptRequest, req: Request):
     get_fabric().save_intent(intent)
     with session_start() as session_id:
       # Execute the graph synchronously - blocks until completion
-      result = await exchange_graph.serve(request.prompt, intent_id=intent.intent_id)
+      result = await exchange_graph.serve(request.prompt, intent_id=intent.intent_id, conversation_id=request.conversation_id)
       logger.info(f"Final result from LangGraph: {result}")
       return {
         "response": result,
@@ -215,7 +218,7 @@ async def handle_stream_prompt(request: PromptRequest, req: Request):
               """
               try:
                   # Stream chunks from the graph as nodes complete execution
-                  async for chunk in exchange_graph.streaming_serve(request.prompt, intent_id=intent.intent_id):
+                  async for chunk in exchange_graph.streaming_serve(request.prompt, intent_id=intent.intent_id, conversation_id=request.conversation_id):
                       yield json.dumps({
                           "response": chunk,
                           "session_id": session_id["executionID"],

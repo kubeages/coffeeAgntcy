@@ -10,6 +10,7 @@ import type { Message } from "@/components/Chat/types"
 import { isLocalDev, parseApiError, Role } from "@/utils/const"
 import { withRetry, RETRY_CONFIG } from "@/utils/retryUtils"
 import { shouldEnableRetries, getApiUrlForPattern } from "@/utils/patternUtils"
+import { getConversationId } from "@/utils/conversation"
 import type { ApiResponse } from "@/types/api"
 
 interface UseAgentAPIReturn {
@@ -72,7 +73,7 @@ export const useAgentAPI = (): UseAgentAPIReturn => {
     const makeApiCall = async (): Promise<ApiResponse> => {
       const response = await axios.post<ApiResponse>(
         `${apiUrl}/agent/prompt`,
-        { prompt },
+        { prompt, conversation_id: getConversationId(), session_id: getConversationId() },
         {
           signal: controller.signal,
           withCredentials: !isLocalDev,
@@ -152,7 +153,7 @@ export const useAgentAPI = (): UseAgentAPIReturn => {
     const makeApiCall = async (): Promise<ApiResponse> => {
       const response = await axios.post<ApiResponse>(
         `${apiUrl}/agent/prompt`,
-        { prompt },
+        { prompt, conversation_id: getConversationId(), session_id: getConversationId() },
         {
           signal: controller.signal,
           withCredentials: !isLocalDev,

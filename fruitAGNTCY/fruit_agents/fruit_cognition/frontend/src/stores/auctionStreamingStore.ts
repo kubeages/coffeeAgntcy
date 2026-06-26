@@ -8,6 +8,7 @@ import type { AuctionStreamingResponse } from "./auctionStreaming.types"
 import { getStreamingEndpointForPattern, PATTERNS } from "@/utils/patternUtils"
 import { isLocalDev, parseFetchError } from "@/utils/const.ts"
 import { logger } from "@/utils/logger"
+import { getConversationId } from "@/utils/conversation"
 
 const isValidAuctionStreamingResponse = (
   data: unknown,
@@ -62,7 +63,7 @@ export const useAuctionStreamingStore = create<StreamingState>((set) => ({
         method: "POST",
         credentials: isLocalDev ? "omit" : "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, conversation_id: getConversationId(), session_id: getConversationId() }),
         signal: abortController.signal,
       })
 

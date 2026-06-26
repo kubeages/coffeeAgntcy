@@ -8,6 +8,7 @@ import type { LogisticsStreamStep } from "./groupStreaming.types"
 import { env } from "@/utils/env"
 import { isLocalDev, parseFetchError } from "@/utils/const.ts"
 import { logger } from "@/utils/logger"
+import { getConversationId } from "@/utils/conversation"
 
 const DEFAULT_LOGISTICS_APP_API_URL = "http://127.0.0.1:9090"
 const LOGISTICS_APP_API_URL =
@@ -151,7 +152,7 @@ export const useGroupStreamingStore = create<
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, conversation_id: getConversationId(), session_id: getConversationId() }),
         },
       )
 

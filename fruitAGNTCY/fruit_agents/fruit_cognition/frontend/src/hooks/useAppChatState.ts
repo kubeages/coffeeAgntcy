@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { LOCAL_STORAGE_KEY } from "@/components/Chat/Messages"
 import { PATTERNS, PatternType } from "@/utils/patternUtils"
+import { resetConversationId } from "@/utils/conversation"
 import type { Message } from "@/components/Chat/types"
 import type { ApiResponse } from "@/types/api"
 
@@ -106,6 +107,7 @@ export function useAppChatState({ selectedPattern }: UseAppChatStateParams) {
   )
 
   const resetChatState = useCallback(() => {
+    resetConversationId()
     setMessages([])
     setCurrentUserMessage("")
     setAgentResponse(undefined)
