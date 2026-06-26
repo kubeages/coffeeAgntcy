@@ -11,6 +11,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph import MessagesState
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from common.followup import condense_prompt
 from ioa_observe.sdk.decorators import agent, graph
 
 from agents.supervisors.logistics.graph.tools import (
@@ -412,15 +413,18 @@ class LogisticGraph:
             logger.debug(f"Received prompt: {prompt}")
             if not isinstance(prompt, str) or not prompt.strip():
                 raise ValueError("Prompt must be a non-empty string.")
+            config = {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}}
+            # Resolve follow-ups into a standalone request using this thread's history.
+            effective_prompt = await condense_prompt(self.graph, prompt, config) if conversation_id else prompt
             result = await self.graph.ainvoke({
                 "messages": [
                 {
                     "role": "user",
-                    "content": prompt
+                    "content": effective_prompt
                 }
                 ],
                 "intent_id": intent_id,
-            }, {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}})
+            }, config)
 
             messages = result.get("messages", [])
             if not messages:
@@ -484,11 +488,13 @@ class LogisticGraph:
             # Construct the initial state for the LangGraph execution
             # The state follows the MessageGraph pattern with a messages list
             # Set use_streaming flag to route to streaming node
+            config = {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}}
+            effective_prompt = await condense_prompt(self.graph, prompt, config) if conversation_id else prompt
             state = {
                 "messages": [
                     {
                         "role": "user",
-                        "content": prompt
+                        "content": effective_prompt
                     }
                 ],
                 "use_streaming": True,
@@ -502,7 +508,7 @@ class LogisticGraph:
             # This provides fine-grained control over streaming, emitting events for:
             # - Node starts/ends (on_chain_start, on_chain_end)
             # - Intermediate outputs (on_chain_stream)
-            async for event in self.graph.astream_events(state, {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}},
+            async for event in self.graph.astream_events(state, config,
                                                          version="v2"):
                 logger.debug(f"Event: {event}")
 

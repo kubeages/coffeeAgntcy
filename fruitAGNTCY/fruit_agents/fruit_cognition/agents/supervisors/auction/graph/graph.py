@@ -11,6 +11,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.graph import MessagesState
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from common.followup import condense_prompt
 from langgraph.prebuilt import ToolNode
 from ioa_observe.sdk.decorators import agent, graph
 
@@ -682,15 +683,20 @@ class ExchangeGraph:
             
             # Execute the graph using ainvoke() - this runs the entire graph to completion
             # The graph will route through nodes based on the routing logic and return the final state
+            config = {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}}
+            # Resolve follow-ups ("Brazil", "compare it") into a standalone request
+            # using the conversation persisted in the checkpointer for this thread.
+            effective_prompt = await condense_prompt(self.graph, prompt, config) if conversation_id else prompt
+
             result = await self.graph.ainvoke({
                 "messages": [
                 {
                     "role": "user",
-                    "content": prompt,
+                    "content": effective_prompt,
                 }
                 ],
                 "intent_id": intent_id,
-            }, {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}})
+            }, config)
 
             # Extract messages from the final state
             # The messages list contains the full conversation history including user, AI, and tool messages
@@ -747,11 +753,13 @@ class ExchangeGraph:
 
             # Construct the initial state for the LangGraph execution
             # The state follows the MessageGraph pattern with a messages list
+            config = {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}}
+            effective_prompt = await condense_prompt(self.graph, prompt, config) if conversation_id else prompt
             state = {
                 "messages": [
                     {
                         "role": "user",
-                        "content": prompt
+                        "content": effective_prompt
                     }
                 ],
                 "intent_id": intent_id,
@@ -764,7 +772,7 @@ class ExchangeGraph:
             # This provides fine-grained control over streaming, emitting events for:
             # - Node starts/ends (on_chain_start, on_chain_end)
             # - Intermediate outputs (on_chain_stream)
-            async for event in self.graph.astream_events(state, {"configurable": {"thread_id": conversation_id or str(uuid.uuid4())}}, version="v2"):
+            async for event in self.graph.astream_events(state, config, version="v2"):
                 logger.debug(f"Event: {event}")
                 
                 # Filter for "on_chain_stream" events which contain intermediate node outputs
