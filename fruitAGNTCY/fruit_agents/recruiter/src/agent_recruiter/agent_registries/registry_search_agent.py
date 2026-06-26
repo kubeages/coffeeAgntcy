@@ -370,7 +370,9 @@ def create_registry_search_agent(
 
         try:
             agent = Agent(
-                model=LiteLlm(model=LLM_MODEL, temperature=0.1),
+                # Read at build time so the admin /admin/active-config endpoint
+                # (which updates os.environ + rebuilds the team) hot-swaps the model.
+                model=LiteLlm(model=os.getenv("LLM_MODEL", "openai/gpt-4o"), temperature=0.1),
                 name="registry_search_agent",
                 instruction=AGENT_INSTRUCTION,
                 description="Agent for searching, retrieving, and exporting agent records from the AGNTCY Directory",

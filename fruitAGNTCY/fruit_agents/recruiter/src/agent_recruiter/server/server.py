@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from uvicorn import Config, Server
 
 from agent_recruiter.server.agent_executor import RecruiterAgentExecutor
+from agent_recruiter.server.admin import add_admin_routes
 from agent_recruiter.server.card import AGENT_CARD
 
 load_dotenv()
@@ -32,10 +33,13 @@ logger = get_logger(__name__)
 # Initialize a multi-protocol, multi-transport agntcy factory.
 factory = AgntcyFactory("recruiter", enable_tracing=False)
 
-async def run_http_server(server):
+async def run_http_server(server, executor=None):
     """Run the HTTP/REST server."""
     try:
-        config = Config(app=server.build(), host="0.0.0.0", port=8881, loop="asyncio")
+        app = server.build()
+        if executor is not None:
+            add_admin_routes(app, executor)
+        config = Config(app=app, host="0.0.0.0", port=8881, loop="asyncio")
         userver = Server(config)
         await userver.serve()
     except Exception as e:
@@ -66,8 +70,9 @@ async def main():
     """
     Main entry point to start the server with specified transports.
     """
+    executor = RecruiterAgentExecutor()
     request_handler = DefaultRequestHandler(
-        agent_executor=RecruiterAgentExecutor(),
+        agent_executor=executor,
         task_store=InMemoryTaskStore(),
     )
 
@@ -83,7 +88,7 @@ async def main():
     # Run HTTP server and transport logic concurrently
     tasks = []
     if ENABLE_HTTP:
-        tasks.append(asyncio.create_task(run_http_server(server)))
+        tasks.append(asyncio.create_task(run_http_server(server, executor)))
 
     if MESSAGE_TRANSPORT and TRANSPORT_SERVER_ENDPOINT:
         tasks.append(asyncio.create_task(run_transport(server, MESSAGE_TRANSPORT, TRANSPORT_SERVER_ENDPOINT)))

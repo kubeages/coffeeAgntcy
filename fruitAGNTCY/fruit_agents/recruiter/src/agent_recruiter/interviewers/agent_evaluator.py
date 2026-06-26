@@ -797,7 +797,7 @@ def create_evaluation_agent() -> Agent:
     eval_tool = FunctionTool(func=evaluate_agents_tool)
 
     agent = Agent(
-        model=LiteLlm(model=LLM_MODEL),
+        model=LiteLlm(model=os.getenv("LLM_MODEL", "openai/gpt-4o")),
         name="agent_evaluator",
         instruction=AGENT_INSTRUCTION,
         description="Agent for evaluating candidate agents based on user-defined scenarios.",

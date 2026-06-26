@@ -76,6 +76,28 @@ app.add_middleware(
 )
 
 
+async def _forward_active_config_to_recruiter() -> None:
+    """Propagate the active LLM config to the standalone recruiter (8881) so the
+    whole discovery path (supervisor + recruiter team) follows the Settings panel.
+    The recruiter is a separate service with no admin UI of its own; it exposes
+    /admin/active-config that we push to here. Best-effort: never fail the save."""
+    from common import active_llm_config
+
+    cfg = active_llm_config.get_active()
+    if cfg is None:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                f"{RECRUITER_AGENT_URL}/admin/active-config",
+                json=cfg.model_dump(),
+            )
+            resp.raise_for_status()
+        logger.info("Forwarded active LLM config to recruiter (%s)", RECRUITER_AGENT_URL)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Could not forward active LLM config to recruiter: %s", e)
+
+
 async def _reload_recruiter_agent() -> None:
     """Re-import the recruiter agent module so it picks up the new active LLM
     config. The Google ADK agent caches its LLM at module-import time."""
@@ -87,6 +109,8 @@ async def _reload_recruiter_agent() -> None:
         agent_module = await asyncio.to_thread(_load_agent_module)
     app.state.agent_module = agent_module
     logger.info("Recruiter agent module reloaded for active LLM config")
+    # Also push the config to the standalone recruiter (8881).
+    await _forward_active_config_to_recruiter()
 
 
 app.include_router(

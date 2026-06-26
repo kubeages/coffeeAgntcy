@@ -40,6 +40,12 @@ class RecruiterAgentExecutor(AgentExecutor):
         self.agent = RecruiterTeam()
         self.agent_card = AGENT_CARD.model_dump(mode="json", exclude_none=True)
 
+    def reload(self) -> None:
+        """Rebuild the agent team so it picks up the current LLM env (model /
+        OPENAI_API_BASE / key). Called by /admin/active-config when the Settings
+        panel pushes a new config."""
+        self.agent = RecruiterTeam()
+
     def _validate_request(self, context: RequestContext) -> bool:
         """Validates the incoming request.
 

@@ -376,7 +376,7 @@ def evaluate_policy(
     )
 
     response = completion(
-        model=LLM_MODEL,
+        model=os.getenv("LLM_MODEL", "openai/gpt-4o"),
         messages=[
             {
                 "role": "system",
