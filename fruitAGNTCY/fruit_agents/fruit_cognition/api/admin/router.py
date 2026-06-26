@@ -43,7 +43,7 @@ RebuildHook = Callable[[], Union[None, Awaitable[None]]]
 
 class LLMModelsRequest(BaseModel):
     provider: CatalogProvider
-    api_key: str = Field(min_length=1)
+    api_key: str = ""  # optional: vllm/ollama need no key
     base_url: Optional[str] = None
     api_version: Optional[str] = None
 
@@ -56,7 +56,7 @@ class LLMModelsResponse(BaseModel):
 
 class ActiveConfigPayload(BaseModel):
     provider: CatalogProvider
-    api_key: str = Field(min_length=1)
+    api_key: str = ""  # optional: vllm/ollama need no key
     model: str = Field(min_length=1)
     base_url: Optional[str] = None
     api_version: Optional[str] = None
@@ -71,12 +71,12 @@ class ActiveConfigResponse(BaseModel):
 
 logger = logging.getLogger("fruit_cognition.admin.router")
 
-Provider = Literal["openai", "azure", "anthropic"]
+Provider = Literal["openai", "azure", "anthropic", "vllm", "ollama"]
 
 
 class LLMTestRequest(BaseModel):
     provider: Provider
-    api_key: str = Field(min_length=1)
+    api_key: str = ""  # optional: vllm/ollama need no key
     model: str = Field(min_length=1)
     base_url: Optional[str] = None
     api_version: Optional[str] = None
@@ -178,6 +178,21 @@ def _build_litellm_kwargs(req: LLMTestRequest) -> dict:
         kwargs["model"] = (
             req.model if req.model.startswith("anthropic/") else f"anthropic/{req.model}"
         )
+    elif req.provider in ("vllm", "ollama"):
+        # OpenAI-compatible endpoints: route via litellm's openai/ provider
+        # against the user's base_url. No real key required.
+        if not req.base_url:
+            raise HTTPException(
+                status_code=400,
+                detail=f"base_url is required for {req.provider} "
+                       "(e.g. http://your-host:8000/v1 for vLLM, "
+                       "http://your-host:11434/v1 for Ollama).",
+            )
+        kwargs["model"] = (
+            req.model if req.model.startswith("openai/") else f"openai/{req.model}"
+        )
+        kwargs["api_base"] = req.base_url
+        kwargs["api_key"] = req.api_key or "EMPTY"
     return kwargs
 
 

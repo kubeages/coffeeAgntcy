@@ -72,22 +72,45 @@ interface ModelInfo {
 
 const PROVIDER_HINTS: Record<
   LLMProvider,
-  { needsBaseUrl: boolean; needsApiVersion: boolean; modelHint: string }
+  {
+    needsBaseUrl: boolean
+    needsApiVersion: boolean
+    needsApiKey: boolean
+    modelHint: string
+    baseUrlHint?: string
+  }
 > = {
   openai: {
     needsBaseUrl: false,
     needsApiVersion: false,
+    needsApiKey: true,
     modelHint: "gpt-4o-mini",
   },
   azure: {
     needsBaseUrl: true,
     needsApiVersion: true,
+    needsApiKey: true,
     modelHint: "your-deployment-name",
   },
   anthropic: {
     needsBaseUrl: false,
     needsApiVersion: false,
+    needsApiKey: true,
     modelHint: "claude-3-5-haiku-latest",
+  },
+  vllm: {
+    needsBaseUrl: true,
+    needsApiVersion: false,
+    needsApiKey: false,
+    modelHint: "e.g. meta-llama/Llama-3.1-8B-Instruct",
+    baseUrlHint: "http://your-host:8000/v1",
+  },
+  ollama: {
+    needsBaseUrl: true,
+    needsApiVersion: false,
+    needsApiKey: false,
+    modelHint: "e.g. llama3.2",
+    baseUrlHint: "http://your-host:11434/v1",
   },
 }
 
@@ -179,8 +202,9 @@ const AdminPage: React.FC = () => {
   const hint = PROVIDER_HINTS[cfg.provider]
 
   const credsReady =
-    cfg.apiKey.length > 0 &&
-    (cfg.provider !== "azure" || (!!cfg.baseUrl && !!cfg.apiVersion))
+    (!hint.needsApiKey || cfg.apiKey.length > 0) &&
+    (!hint.needsBaseUrl || !!cfg.baseUrl) &&
+    (!hint.needsApiVersion || !!cfg.apiVersion)
 
   const update = (patch: Partial<LLMConfig>) =>
     setCfg((prev) => ({ ...prev, ...patch }))
@@ -520,10 +544,12 @@ const AdminPage: React.FC = () => {
                 <MenuItem value="openai">OpenAI</MenuItem>
                 <MenuItem value="azure">Azure OpenAI</MenuItem>
                 <MenuItem value="anthropic">Anthropic</MenuItem>
+                <MenuItem value="vllm">vLLM (self-hosted)</MenuItem>
+                <MenuItem value="ollama">Ollama (self-hosted)</MenuItem>
               </TextField>
 
               <TextField
-                label="API key"
+                label={hint.needsApiKey ? "API key" : "API key (optional)"}
                 value={cfg.apiKey}
                 onChange={(e) => update({ apiKey: e.target.value })}
                 type={revealKey ? "text" : "password"}
@@ -554,7 +580,9 @@ const AdminPage: React.FC = () => {
                   label="API base URL"
                   value={cfg.baseUrl ?? ""}
                   onChange={(e) => update({ baseUrl: e.target.value })}
-                  placeholder="https://your-resource.openai.azure.com"
+                  placeholder={
+                    hint.baseUrlHint ?? "https://your-resource.openai.azure.com"
+                  }
                   fullWidth
                 />
               )}
@@ -690,7 +718,7 @@ const AdminPage: React.FC = () => {
                     )
                   }
                   onClick={handleTest}
-                  disabled={testing || !cfg.apiKey || !cfg.model}
+                  disabled={testing || !credsReady || !cfg.model}
                 >
                   {testing ? "Testing…" : "Test connection"}
                 </Button>
@@ -704,7 +732,7 @@ const AdminPage: React.FC = () => {
                     )
                   }
                   onClick={handleSave}
-                  disabled={!dirty || saving || !cfg.apiKey || !cfg.model}
+                  disabled={!dirty || saving || !credsReady || !cfg.model}
                 >
                   {saving ? "Saving…" : "Save"}
                 </Button>

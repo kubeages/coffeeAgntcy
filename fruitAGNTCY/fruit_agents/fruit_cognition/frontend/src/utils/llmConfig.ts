@@ -7,7 +7,12 @@
  * future X-LLM-* header layer.
  */
 
-export type LLMProvider = "openai" | "azure" | "anthropic"
+export type LLMProvider =
+  | "openai"
+  | "azure"
+  | "anthropic"
+  | "vllm"
+  | "ollama"
 
 export interface LLMConfig {
   provider: LLMProvider

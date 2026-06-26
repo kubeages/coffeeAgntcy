@@ -25,12 +25,14 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-Provider = Literal["openai", "azure", "anthropic"]
+# vllm + ollama are OpenAI-compatible endpoints (no key required); they are
+# routed through litellm's ``openai/`` provider with a custom ``base_url``.
+Provider = Literal["openai", "azure", "anthropic", "vllm", "ollama"]
 
 
 class ActiveLLMConfig(BaseModel):
     provider: Provider
-    api_key: str = Field(min_length=1)
+    api_key: str = ""  # optional: vllm/ollama need no key
     model: str = Field(min_length=1)
     base_url: Optional[str] = None
     api_version: Optional[str] = None
@@ -81,6 +83,9 @@ def _model_with_prefix(provider: Provider, model: str) -> str:
         return f"azure/{model}"
     if provider == "anthropic" and not model.startswith("anthropic/"):
         return f"anthropic/{model}"
+    # vllm/ollama: drive them through litellm's OpenAI-compatible path.
+    if provider in ("vllm", "ollama") and not model.startswith("openai/"):
+        return f"openai/{model}"
     return model
 
 
@@ -96,10 +101,15 @@ def apply(cfg: ActiveLLMConfig) -> ActiveLLMConfig:
         _current = cfg
         os.environ["LLM_MODEL"] = resolved_model
 
-        if cfg.provider == "openai":
-            os.environ["OPENAI_API_KEY"] = cfg.api_key
+        if cfg.provider in ("openai", "vllm", "ollama"):
+            # vllm/ollama are OpenAI-compatible; an empty key still needs a
+            # non-empty placeholder so the OpenAI client sends a header.
+            os.environ["OPENAI_API_KEY"] = cfg.api_key or "EMPTY"
             if cfg.base_url:
                 os.environ["OPENAI_API_BASE"] = cfg.base_url
+            else:
+                # don't leak a previous provider's custom base into plain OpenAI
+                os.environ.pop("OPENAI_API_BASE", None)
             os.environ.pop("AZURE_API_KEY", None)
             os.environ.pop("ANTHROPIC_API_KEY", None)
         elif cfg.provider == "azure":

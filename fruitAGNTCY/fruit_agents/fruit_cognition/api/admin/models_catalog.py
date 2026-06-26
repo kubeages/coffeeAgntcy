@@ -19,7 +19,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("fruit_cognition.admin.models_catalog")
 
-Provider = Literal["openai", "azure", "anthropic"]
+Provider = Literal["openai", "azure", "anthropic", "vllm", "ollama"]
 
 # Filter out non-chat OpenAI models so the UI doesn't show embeddings, audio, image, etc.
 _OPENAI_CHAT_PREFIXES = (
@@ -109,6 +109,25 @@ async def _list_openai(api_key: str, base_url: Optional[str]) -> List[str]:
         ]
 
 
+async def _list_openai_compatible(api_key: str, base_url: str) -> List[str]:
+    """List models from an OpenAI-compatible endpoint (vLLM, Ollama).
+
+    Both expose ``GET <base>/v1/models``. The user may enter the base with or
+    without the trailing ``/v1``; normalise either way.
+    """
+    base = base_url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[: -len("/v1")]
+    url = f"{base}/v1/models"
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+        data = resp.json().get("data", [])
+        # Self-hosted endpoints serve arbitrary model ids; don't filter by name.
+        return [m.get("id") for m in data if m.get("id")]
+
+
 async def _list_azure(api_key: str, base_url: str, api_version: str) -> List[str]:
     base = base_url.rstrip("/")
     url = f"{base}/openai/deployments?api-version={api_version}"
@@ -178,6 +197,24 @@ async def list_models(
             enrich = _enrich_from_litellm("anthropic", mid)
             out.append(
                 ModelInfo(id=mid, label=display, provider="anthropic", **enrich)
+            )
+
+    elif provider in ("vllm", "ollama"):
+        if not base_url:
+            raise ValueError(
+                f"{provider} requires base_url "
+                "(e.g. http://your-host:8000/v1 for vLLM, "
+                "http://your-host:11434/v1 for Ollama)."
+            )
+        ids = await _list_openai_compatible(api_key, base_url)
+        for mid in sorted(set(ids)):
+            out.append(
+                ModelInfo(
+                    id=mid,
+                    label=mid,
+                    provider=provider,
+                    notes="Self-hosted OpenAI-compatible model.",
+                )
             )
 
     # Sort: known context first (richest data), then alpha
